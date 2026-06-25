@@ -1,6 +1,6 @@
 {
   "name": "eva-travel-map",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -12,5 +12,14 @@
     "react": "^18",
     "react-dom": "^18",
     "@supabase/supabase-js": "^2"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3",
+    "autoprefixer": "^10",
+    "postcss": "^8",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "typescript": "^5"
   }
 }
