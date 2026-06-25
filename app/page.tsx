@@ -861,13 +861,16 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
 function CountryPage({ country, places, onBack, onSelect }) {
   const [q, setQ] = useState("");
   const [collapsed, setCollapsed] = useState({});
+  const [filterStatus, setFilterStatus] = useState("");
 
   const list = places.filter(p => p.country === country);
 
-  // Filter by search
-  const filtered = q.trim() === "" ? list : list.filter(p => {
+  // Filter by search + status
+  const filtered = list.filter(p => {
     const lq = q.toLowerCase();
-    return [p.name, p.neighborhood, p.note||"", p.review||"", ...(p.recommendations||[]), ...(p.types||[])].some(s => s.toLowerCase().includes(lq));
+    const mQ = !q.trim() || [p.name, p.neighborhood, p.note||"", p.review||"", ...(p.recommendations||[]), ...(p.types||[])].some(s => s.toLowerCase().includes(lq));
+    const mS = !filterStatus || p.status === filterStatus;
+    return mQ && mS;
   });
 
   // Group by neighborhood
@@ -893,33 +896,37 @@ function CountryPage({ country, places, onBack, onSelect }) {
             <div style={{ fontSize:12, color:"#8E8E93" }}>{list.length} 個收藏 · {Object.keys(grouped).length} 個商圈</div>
           </div>
         </div>
-        {/* Status stats */}
+        {/* Status filter buttons */}
         <div style={{ display:"flex", gap:8, marginBottom:14 }}>
-          {Object.entries(STATUS_CFG).map(([k,s])=>(
-            <div key={k} style={{ flex:1, background:"#F5F0EB", borderRadius:12, padding:"10px 0", textAlign:"center" }}>
-              <div style={{ fontSize:20, fontWeight:700, color:"#000", lineHeight:1 }}>{list.filter(p=>p.status===k).length}</div>
-              <div style={{ fontSize:10, color:"#8E8E93", marginTop:3 }}>{s.mark} {s.label}</div>
-            </div>
-          ))}
+          {Object.entries(STATUS_CFG).map(([k,s])=>{
+            const count = list.filter(p=>p.status===k).length;
+            const active = filterStatus === k;
+            return (
+              <button key={k} onClick={()=>setFilterStatus(active?"":k)}
+                style={{ flex:1, background:active?"#3C3C3C":"#F5F0EB", borderRadius:12, padding:"10px 0", textAlign:"center", border:"none", cursor:"pointer", transition:"all 0.15s" }}>
+                <div style={{ fontSize:20, fontWeight:700, color:active?"white":"#000", lineHeight:1 }}>{count}</div>
+                <div style={{ fontSize:10, color:active?"rgba(255,255,255,0.7)":"#8E8E93", marginTop:3 }}>{s.mark} {s.label}</div>
+              </button>
+            );
+          })}
         </div>
         {/* Search */}
         <div style={{ display:"flex", alignItems:"center", gap:10, background:"#F5F0EB", borderRadius:12, padding:"10px 14px" }}>
           <span style={{ fontSize:14, color:"#8E8E93" }}>🔍</span>
           <input value={q} onChange={e=>setQ(e.target.value)} placeholder="搜尋地點、推薦品項、備註..."
             style={{ flex:1, border:"none", outline:"none", fontSize:15, background:"none", color:"#000", fontFamily:"inherit" }} />
-          {q && <button onClick={()=>setQ("")} style={{ background:"none", border:"none", color:"#8E8E93", fontSize:16, cursor:"pointer", padding:0 }}>✕</button>}
+          {(q||filterStatus) && <button onClick={()=>{setQ("");setFilterStatus("");}} style={{ background:"none", border:"none", color:"#8E8E93", fontSize:16, cursor:"pointer", padding:0 }}>✕</button>}
         </div>
       </div>
 
       <div style={{ padding:"16px 20px 40px" }}>
         {filtered.length === 0 && (
-          <div style={{ textAlign:"center", padding:"60px 0", color:"#8E8E93", fontSize:15 }}>{q ? `沒有符合「${q}」的地點` : "還沒有收藏"}</div>
+          <div style={{ textAlign:"center", padding:"60px 0", color:"#8E8E93", fontSize:15 }}>{q||filterStatus ? "沒有符合的地點" : "還沒有收藏"}</div>
         )}
         {Object.entries(grouped).map(([nb, nbPlaces]) => {
           const isCollapsed = collapsed[nb];
           return (
             <div key={nb} style={{ marginBottom:16 }}>
-              {/* Section header — tappable to collapse */}
               <button onClick={() => toggleCollapse(nb)} style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between", background:"none", border:"none", cursor:"pointer", padding:"0 0 8px 0", textAlign:"left" }}>
                 <div style={{ fontSize:12, fontWeight:600, color:"#8E8E93", letterSpacing:0.3 }}>
                   {nb}{nbPlaces[0]?.district ? ` · ${nbPlaces[0].district}` : ""} <span style={{ fontWeight:400 }}>({nbPlaces.length})</span>
@@ -1515,7 +1522,7 @@ export default function App() {
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
       style={{ width:"100%", fontFamily:"-apple-system,'SF Pro Text',sans-serif", background:"#F5F0EB", minHeight:"100vh", position:"relative", overflow:"hidden" }}>
-      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box} ::-webkit-scrollbar{display:none} a{text-decoration:none} button{font-family:inherit} select{-webkit-appearance:none;appearance:none}`}</style>
+      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box} html,body{margin:0;padding:0;overflow-x:hidden;width:100%;height:100%} ::-webkit-scrollbar{display:none} a{text-decoration:none} button{font-family:inherit} select{-webkit-appearance:none;appearance:none}`}</style>
 
       {/* Swipe back shadow indicator */}
       {slideX > 0 && page !== "home" && (
