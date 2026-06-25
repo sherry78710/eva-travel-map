@@ -1,3 +1,4 @@
+'use client'
 import { useState, useRef } from "react";
 
 // ── Geo data with district mapping ────────────────────────────────────────────
