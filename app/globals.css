@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #F5F3F0;
+  --surface: #FFFFFF;
+  --ink: #1A1A1A;
+  --sub: #8C8480;
+  --line: #E8E5E1;
+  --dim: #C4BFBA;
+  --btn: #2C2C2C;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  max-width: 430px;
+  margin: 0 auto;
+  min-height: 100vh;
+}
+
+input, textarea, button { font-family: inherit; }
+textarea { resize: none; }
+a { color: inherit; text-decoration: none; }
+
+/* 頁面淡入 */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.page-enter {
+  animation: fadeIn 0.2s ease-out forwards;
+}
