@@ -1434,9 +1434,12 @@ function Notes({ onBack, countries }) {
   const [editingNote,setEditingNote]=useState<any>(null);
   const [newCatInput,setNewCatInput]=useState("");
   const [showCatInput,setShowCatInput]=useState(false);
-  const [lightbox,setLightbox]=useState<string|null>(null);
+  const [saving,setSaving]=useState(false);
+  const [editSaving,setEditSaving]=useState(false);
+  const [lightbox,setLightbox]=useState<{photos:string[],index:number}|null>(null);
   const photoInputRef=useRef<HTMLInputElement>(null);
   const editPhotoInputRef=useRef<HTMLInputElement>(null);
+  const lightboxStartX=useRef(0);
 
   // 載入備忘錄
   useEffect(()=>{
@@ -1459,11 +1462,13 @@ function Notes({ onBack, countries }) {
   }
 
   async function handleSave() {
-    if(!newContent.trim() && newPhotos.length===0) return;
+    if((!newContent.trim() && newPhotos.length===0) || saving) return;
+    setSaving(true);
     const payload={country, category:newCat, content:newContent.trim(), photos:newPhotos};
     const {data,error}=await sb.from('country_notes').insert([payload]).select().single();
     if(!error&&data){ setNotes(ns=>[data,...ns]); }
     setNewContent(""); setNewPhotos([]); setAdding(false);
+    setSaving(false);
   }
 
   async function handleDelete(id:string) {
@@ -1472,12 +1477,14 @@ function Notes({ onBack, countries }) {
   }
 
   async function handleEditSave() {
-    if(!editingNote) return;
+    if(!editingNote || editSaving) return;
+    setEditSaving(true);
     const {error}=await sb.from('country_notes').update({
       content:editingNote.content, category:editingNote.category, photos:editingNote.photos||[]
     }).eq('id',editingNote.id);
     if(!error){ setNotes(ns=>ns.map(n=>n.id===editingNote.id?editingNote:n)); }
     setEditingNote(null);
+    setEditSaving(false);
   }
 
   function addCat() {
@@ -1540,15 +1547,15 @@ function Notes({ onBack, countries }) {
             </div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={()=>setAdding(false)} style={{flex:1,padding:11,border:"none",borderRadius:12,background:"#F5F0EB",color:"#3C3C43",fontSize:14,cursor:"pointer"}}>取消</button>
-              <button onClick={handleSave} style={{flex:2,padding:11,border:"none",borderRadius:12,background:"#000",color:"white",fontSize:14,fontWeight:600,cursor:"pointer"}}>儲存</button>
+              <button onClick={handleSave} disabled={saving} style={{flex:2,padding:11,border:"none",borderRadius:12,background:saving?"#C7C7CC":"#000",color:"white",fontSize:14,fontWeight:600,cursor:saving?"default":"pointer"}}>{saving?"儲存中...":"儲存"}</button>
             </div>
           </div>
         )}
 
         {/* 編輯 Modal */}
         {editingNote && (
-          <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:100,display:"flex",alignItems:"flex-end"}}>
-            <div style={{background:"#FDF8F3",borderRadius:"16px 16px 0 0",padding:"20px 20px 40px",width:"100%"}}>
+          <div onClick={()=>setEditingNote(null)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:100,display:"flex",alignItems:"flex-end"}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:"#FDF8F3",borderRadius:"16px 16px 0 0",padding:"20px 20px 40px",width:"100%"}}>
               <div style={{fontSize:16,fontWeight:600,marginBottom:12}}>編輯備忘錄</div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
                 {cats.map(c=>(
@@ -1572,7 +1579,7 @@ function Notes({ onBack, countries }) {
               </div>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>setEditingNote(null)} style={{flex:1,padding:12,border:"none",borderRadius:12,background:"#F5F0EB",color:"#3C3C43",fontSize:14,cursor:"pointer"}}>取消</button>
-                <button onClick={handleEditSave} style={{flex:2,padding:12,border:"none",borderRadius:12,background:"#000",color:"white",fontSize:14,fontWeight:600,cursor:"pointer"}}>儲存</button>
+                <button onClick={handleEditSave} disabled={editSaving} style={{flex:2,padding:12,border:"none",borderRadius:12,background:editSaving?"#C7C7CC":"#000",color:"white",fontSize:14,fontWeight:600,cursor:editSaving?"default":"pointer"}}>{editSaving?"儲存中...":"儲存"}</button>
               </div>
             </div>
           </div>
@@ -1597,7 +1604,7 @@ function Notes({ onBack, countries }) {
                   {(n.photos||[]).length>0 && (
                     <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
                       {(n.photos||[]).map((p:string,pi:number)=>(
-                        <div key={pi} onClick={()=>setLightbox(p)} style={{width:64,height:64,borderRadius:8,overflow:"hidden",cursor:"pointer",flexShrink:0}}>
+                        <div key={pi} onClick={()=>setLightbox({photos:n.photos,index:pi})} style={{width:64,height:64,borderRadius:8,overflow:"hidden",cursor:"pointer",flexShrink:0}}>
                           <img src={p} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} />
                         </div>
                       ))}
@@ -1610,10 +1617,32 @@ function Notes({ onBack, countries }) {
         ))}
       </div>
 
-      {/* 照片放大 */}
+      {/* 照片放大 — 左右滑動 */}
       {lightbox && (
-        <div onClick={()=>setLightbox(null)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.9)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <img src={lightbox} alt="" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} />
+        <div
+          onClick={()=>setLightbox(null)}
+          onTouchStart={e=>{ lightboxStartX.current=e.touches[0].clientX; }}
+          onTouchEnd={e=>{
+            const dx=e.changedTouches[0].clientX-lightboxStartX.current;
+            if(Math.abs(dx)>50){
+              const newIdx=dx<0
+                ? Math.min(lightbox.index+1, lightbox.photos.length-1)
+                : Math.max(lightbox.index-1, 0);
+              setLightbox({...lightbox,index:newIdx});
+            } else {
+              setLightbox(null);
+            }
+          }}
+          style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.95)",zIndex:200,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+          <img src={lightbox.photos[lightbox.index]} alt="" style={{maxWidth:"100%",maxHeight:"85%",objectFit:"contain"}} />
+          {lightbox.photos.length>1 && (
+            <div style={{display:"flex",gap:6,marginTop:12}}>
+              {lightbox.photos.map((_:string,i:number)=>(
+                <div key={i} onClick={e=>{e.stopPropagation();setLightbox({...lightbox,index:i});}} style={{width:8,height:8,borderRadius:"50%",background:i===lightbox.index?"white":"rgba(255,255,255,0.4)",cursor:"pointer"}} />
+              ))}
+            </div>
+          )}
+          <div style={{position:"absolute",top:20,right:20,color:"white",fontSize:14,opacity:0.7}}>{lightbox.index+1} / {lightbox.photos.length}</div>
         </div>
       )}
     </div>
