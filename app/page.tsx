@@ -718,7 +718,7 @@ function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCou
 
   return (
     <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
-      <div style={{ background:"#FDF8F3", padding:"52px 20px 0" }}>
+      <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 16px)", paddingBottom:"0", paddingLeft:"20px", paddingRight:"20px" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0 }}>‹ 返回</button>
           <div style={{ fontSize:17, fontWeight:600 }}>設定</div>
@@ -819,11 +819,10 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
   const byCountry = {};
   places.forEach(p=>{ byCountry[p.country]=(byCountry[p.country]||0)+1; });
   const orderedActive = countryOrder.filter(c=>byCountry[c]);
-  const recent = [...places].slice(0,4);
 
   return (
     <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
-      <div style={{ background:"#FDF8F3", padding:"52px 20px 16px" }}>
+      <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 16px)", paddingBottom:16, paddingLeft:20, paddingRight:20 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <div style={{ display:"flex", gap:8 }}>
             <button onClick={()=>onNav("add")} style={{ padding:"10px 20px", background:"#000", borderRadius:22, fontSize:14, fontWeight:600, color:"white", border:"none", cursor:"pointer" }}>+ 新增收藏</button>
@@ -849,11 +848,11 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
           </>
         )}
 
-        <div style={{ fontSize:12, fontWeight:600, color:"#8E8E93", marginBottom:8 }}>最近收藏</div>
+        <div style={{ fontSize:12, fontWeight:600, color:"#8E8E93", marginBottom:8 }}>所有收藏</div>
         <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden" }}>
-          {recent.length===0 && <div style={{ padding:"30px 16px", textAlign:"center", color:"#8E8E93", fontSize:14 }}>還沒有收藏</div>}
-          {recent.map((p,i)=>(
-            <div key={p.id} style={{ borderBottom:i<recent.length-1?"1px solid #EDE8E2":"none" }}>
+          {places.length===0 && <div style={{ padding:"30px 16px", textAlign:"center", color:"#8E8E93", fontSize:14 }}>還沒有收藏</div>}
+          {places.map((p,i)=>(
+            <div key={p.id} style={{ borderBottom:i<places.length-1?"1px solid #EDE8E2":"none" }}>
               <PlaceRow place={p} onClick={()=>onNav("detail",p)} />
             </div>
           ))}
@@ -894,7 +893,7 @@ function CountryPage({ country, places, onBack, onSelect }) {
 
   return (
     <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
-      <div style={{ background:"#FDF8F3", padding:"52px 20px 12px" }}>
+      <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 12px)", paddingBottom:"12px", paddingLeft:"20px", paddingRight:"20px" }}>
         <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0, marginBottom:12 }}>‹ 返回</button>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
           <span style={{ fontSize:28 }}>{COUNTRY_FLAGS[country]||"🌍"}</span>
@@ -1103,7 +1102,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp }) {
 
   return (
     <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
-      <div style={{ background:"#FDF8F3", padding:"52px 20px 16px", display:"flex", alignItems:"flex-end", justifyContent:"space-between" }}>
+      <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 16px)", paddingBottom:"16px", paddingLeft:"20px", paddingRight:"20px", display:"flex", alignItems:"flex-end", justifyContent:"space-between" }}>
         <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0 }}>取消</button>
         <div style={{ fontSize:17, fontWeight:600 }}>新增收藏</div>
         <button onClick={handleSave} disabled={!f.name.trim()||saving}
@@ -1180,7 +1179,7 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
   if (editing) {
     return (
       <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
-        <div style={{ background:"#FDF8F3", padding:"52px 20px 16px", display:"flex", alignItems:"flex-end", justifyContent:"space-between" }}>
+        <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 16px)", paddingBottom:"16px", paddingLeft:"20px", paddingRight:"20px", display:"flex", alignItems:"flex-end", justifyContent:"space-between" }}>
           <button onClick={()=>{ setF({...place}); setEditing(false); }} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0 }}>取消</button>
           <div style={{ fontSize:17, fontWeight:600 }}>編輯</div>
           <button onClick={()=>{ onEdit(f); setEditing(false); }} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, fontWeight:600, cursor:"pointer", padding:0 }}>儲存</button>
@@ -1232,7 +1231,7 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
 
   return (
     <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
-      <div style={{ background:"#FDF8F3", padding:"52px 20px 16px", display:"flex", alignItems:"flex-end", justifyContent:"space-between" }}>
+      <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 16px)", paddingBottom:"16px", paddingLeft:"20px", paddingRight:"20px", display:"flex", alignItems:"flex-end", justifyContent:"space-between" }}>
         <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0 }}>‹ 返回</button>
         <button onClick={()=>setEditing(true)} style={{ background:"none", border:"none", color:"#007AFF", fontSize:15, fontWeight:600, cursor:"pointer", padding:0 }}>編輯</button>
       </div>
@@ -1383,7 +1382,7 @@ function Search({ places, onBack, onSelect }) {
   const filtered=places.filter(p=>{ const lq=q.toLowerCase(); const mQ=!q||[p.name,p.neighborhood,p.city,p.country,p.note||"",...(p.recommendations||[])].some(s=>s.toLowerCase().includes(lq)); return mQ&&(!fS||p.status===fS)&&(!fT||p.types?.includes(fT)); });
   return (
     <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
-      <div style={{ background:"#FDF8F3", padding:"52px 16px 12px" }}>
+      <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 12px)", paddingBottom:"12px", paddingLeft:"16px", paddingRight:"16px" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, background:"#F5F0EB", borderRadius:12, padding:"10px 14px", marginBottom:10 }}>
           <span style={{ fontSize:14, color:"#8E8E93" }}>🔍</span>
           <input value={q} onChange={e=>setQ(e.target.value)} autoFocus style={{ flex:1, border:"none", outline:"none", fontSize:16, background:"none", color:"#000", fontFamily:"inherit" }} />
@@ -1427,7 +1426,7 @@ function Notes({ onBack, countries }) {
   filtered.forEach(n=>{ if(!grouped[n.category]) grouped[n.category]=[]; grouped[n.category].push(n); });
   return (
     <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
-      <div style={{ background:"#FDF8F3", padding:"52px 20px 0" }}>
+      <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 16px)", paddingBottom:"0", paddingLeft:"20px", paddingRight:"20px" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
           <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0 }}>‹ 返回</button>
           <div style={{ fontSize:17, fontWeight:600 }}>國家備忘錄</div>
@@ -1556,13 +1555,15 @@ export default function App() {
   function onTouchMove(e:React.TouchEvent){
     const dx=e.touches[0].clientX-touchStartX.current;
     const dy=e.touches[0].clientY-touchStartY.current;
-    if(touchStartX.current<40&&Math.abs(dx)>Math.abs(dy)&&dx>0){
+    if(touchStartX.current<60&&Math.abs(dx)>Math.abs(dy)&&dx>0){
       isSwiping.current=true;
-      setSlideX(Math.min(dx,300));
+      // 加阻尼讓滑動感覺更自然
+      const damped = Math.pow(dx, 0.85);
+      setSlideX(Math.min(damped, window.innerWidth * 0.85));
     }
   }
   function onTouchEnd(){
-    if(isSwiping.current&&slideX>80&&page!=="home") goBack();
+    if(isSwiping.current&&slideX>window.innerWidth*0.3&&page!=="home") goBack();
     setSlideX(0); isSwiping.current=false;
   }
 
@@ -1574,10 +1575,25 @@ export default function App() {
 
   return (
     <div onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
-      style={{width:"100%",fontFamily:"-apple-system,'SF Pro Text',sans-serif",background:"#F5F0EB",minHeight:"100vh",position:"relative",overflow:"hidden"}}>
-      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box} html,body{margin:0;padding:0;overflow:hidden;width:100%;height:100%;overscroll-behavior:none;position:fixed} ::-webkit-scrollbar{display:none} a{text-decoration:none} button{font-family:inherit} select{-webkit-appearance:none;appearance:none}`}</style>
+      style={{width:"100vw",fontFamily:"-apple-system,'SF Pro Text',sans-serif",background:"#F5F0EB",minHeight:"100dvh",position:"fixed",top:0,left:0,right:0,bottom:0,overflow:"hidden"}}>
+      <style>{`
+        @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+        *{box-sizing:border-box;margin:0;padding:0}
+        html,body{width:100%;height:100%;overflow:hidden;overscroll-behavior:none;-webkit-overflow-scrolling:touch}
+        ::-webkit-scrollbar{display:none}
+        a{text-decoration:none}
+        button{font-family:inherit}
+        select{-webkit-appearance:none;appearance:none}
+      `}</style>
 
-      <div style={{transform:slideX>0?`translateX(${slideX}px)`:"none",transition:slideX===0?"transform 0.25s ease":"none",width:"100%",height:"100vh",overflowY:"auto",overflowX:"hidden"}}>
+      <div style={{
+        position:"absolute", top:0, left:0, right:0, bottom:0,
+        transform:slideX>0?`translateX(${slideX}px)`:"translateX(0)",
+        transition:slideX===0?"transform 0.35s cubic-bezier(0.4,0,0.2,1)":"none",
+        willChange:"transform",
+        overflowY:"auto", overflowX:"hidden",
+        WebkitOverflowScrolling:"touch",
+      }}>
         {page==="home"&&<Home places={places} countries={countries} countryOrder={countryOrder} onNav={nav} onCountry={c=>{setSelectedCountry(c);setHistory(h=>[...h,"country"]);}} />}
         {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} />}
         {page==="country"&&<CountryPage country={selectedCountry!} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
