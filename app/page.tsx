@@ -1606,7 +1606,7 @@ export default function App() {
 
       {/* 上層頁面：疊在 Home 上面，右滑時往右移動 */}
       {page!=="home" && (
-        <div style={{
+        <div key={page} style={{
           position:"absolute", top:0, left:0, right:0, bottom:0,
           transform:slideX>0?`translateX(${slideX}px)`:"translateX(0)",
           transition:slideX===0?"transform 0.35s cubic-bezier(0.4,0,0.2,1)":"none",
@@ -1614,7 +1614,6 @@ export default function App() {
           overflowY:"auto", overflowX:"hidden",
           WebkitOverflowScrolling:"touch",
           background:"#F5F0EB",
-          animation:"slideIn 0.3s cubic-bezier(0.4,0,0.2,1)",
         }}>
           {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} />}
           {page==="country"&&<CountryPage country={selectedCountry!} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
