@@ -1,5 +1,12 @@
 'use client'
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { createClient } from '@supabase/supabase-js';
+
+// ── Supabase client ───────────────────────────────────────────────────────────
+const sb = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+);
 
 // ── Geo data with district mapping ────────────────────────────────────────────
 const GEO = {
@@ -1468,79 +1475,118 @@ function Notes({ onBack, countries }) {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [places,setPlaces]=useState(PLACES_INIT);
+  const [places,setPlaces]=useState<any[]>([]);
+  const [loading,setLoading]=useState(true);
   const [countries,setCountries]=useState(Object.keys(GEO));
   const [countryOrder,setCountryOrder]=useState(Object.keys(GEO));
   const [types,setTypes]=useState(INIT_TYPES);
   const [geoData,setGeoData]=useState(GEO);
   const [history,setHistory]=useState(["home"]);
-  const [selected,setSelected]=useState(null);
-  const [selectedCountry,setSelectedCountry]=useState(null);
+  const [selected,setSelected]=useState<any>(null);
+  const [selectedCountry,setSelectedCountry]=useState<string|null>(null);
   const [slideX,setSlideX]=useState(0);
   const touchStartX=useRef(0);
   const touchStartY=useRef(0);
   const isSwiping=useRef(false);
 
+  // ── 載入資料 ──
+  useEffect(()=>{
+    sb.from('places').select('*').order('created_at',{ascending:false})
+      .then(({data})=>{ if(data) setPlaces(data); setLoading(false); });
+  },[]);
+
   const page = history[history.length-1];
 
-  function nav(dest,data){
+  function nav(dest:string,data?:any){
     if(data) setSelected(data);
     setHistory(h=>[...h, dest]);
   }
+  function goBack(){ setHistory(h=>h.length>1?h.slice(0,-1):h); }
 
-  function goBack() {
-    setHistory(h => h.length > 1 ? h.slice(0,-1) : h);
+  // ── 新增 ──
+  async function handleAdd(p:any){
+    const payload = {
+      name:p.name, country:p.country, city:p.city||'',
+      district:p.district||'', neighborhood:p.neighborhood||'',
+      types:p.types||[], status:'wishlist',
+      note:p.note||'', address:p.address||'',
+      recommendations:p.recommendations||[],
+      source_url:p.source_url||'',
+      rating:0, review:'', photos:p.photos||[],
+      summary:'', tags:[],
+    };
+    const {data,error}=await sb.from('places').insert([payload]).select().single();
+    if(!error&&data) setPlaces(ps=>[data,...ps]);
+    else console.error('handleAdd error:', error);
   }
 
-  function onTouchStart(e) {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-    isSwiping.current = false;
+  // ── 改狀態 ──
+  async function handleStatusChange(id:string,s:string){
+    await sb.from('places').update({status:s}).eq('id',id);
+    setPlaces(ps=>ps.map(p=>p.id===id?{...p,status:s}:p));
+    setSelected((prev:any)=>({...prev,status:s}));
   }
 
-  function onTouchMove(e) {
-    const dx = e.touches[0].clientX - touchStartX.current;
-    const dy = e.touches[0].clientY - touchStartY.current;
-    // Only trigger if starting from left edge and horizontal swipe
-    if (touchStartX.current < 40 && Math.abs(dx) > Math.abs(dy) && dx > 0) {
-      isSwiping.current = true;
-      setSlideX(Math.min(dx, 300));
+  // ── 編輯 ──
+  async function handleEdit(u:any){
+    const {error}=await sb.from('places').update({
+      name:u.name, country:u.country, city:u.city,
+      district:u.district||'', neighborhood:u.neighborhood,
+      types:u.types||[], note:u.note||'', address:u.address||'',
+      recommendations:u.recommendations||[], source_url:u.source_url||'',
+      rating:u.rating||0, review:u.review||'', photos:u.photos||[],
+      status:u.status, summary:u.summary||'', tags:u.tags||[],
+    }).eq('id',u.id);
+    if(!error){ setPlaces(ps=>ps.map(p=>p.id===u.id?u:p)); setSelected(u); }
+    else console.error('handleEdit error:', error);
+  }
+
+  // ── 刪除 ──
+  async function handleDelete(id:string){
+    await sb.from('places').delete().eq('id',id);
+    setPlaces(ps=>ps.filter(p=>p.id!==id));
+    setHistory(["home"]);
+  }
+
+  function onTouchStart(e:React.TouchEvent){
+    touchStartX.current=e.touches[0].clientX;
+    touchStartY.current=e.touches[0].clientY;
+    isSwiping.current=false;
+  }
+  function onTouchMove(e:React.TouchEvent){
+    const dx=e.touches[0].clientX-touchStartX.current;
+    const dy=e.touches[0].clientY-touchStartY.current;
+    if(touchStartX.current<40&&Math.abs(dx)>Math.abs(dy)&&dx>0){
+      isSwiping.current=true;
+      setSlideX(Math.min(dx,300));
     }
   }
-
-  function onTouchEnd() {
-    if (isSwiping.current && slideX > 80 && page !== "home") {
-      goBack();
-    }
-    setSlideX(0);
-    isSwiping.current = false;
+  function onTouchEnd(){
+    if(isSwiping.current&&slideX>80&&page!=="home") goBack();
+    setSlideX(0); isSwiping.current=false;
   }
+
+  if(loading) return (
+    <div style={{width:"100%",height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#F5F0EB",fontFamily:"-apple-system,sans-serif",color:"#8E8E93",fontSize:15}}>
+      載入中...
+    </div>
+  );
 
   return (
-    <div
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      style={{ width:"100%", fontFamily:"-apple-system,'SF Pro Text',sans-serif", background:"#F5F0EB", minHeight:"100vh", position:"relative", overflow:"hidden" }}>
-      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box} html,body{margin:0;padding:0;overflow-x:hidden;width:100%;height:100%} ::-webkit-scrollbar{display:none} a{text-decoration:none} button{font-family:inherit} select{-webkit-appearance:none;appearance:none}`}</style>
+    <div onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+      style={{width:"100%",fontFamily:"-apple-system,'SF Pro Text',sans-serif",background:"#F5F0EB",minHeight:"100vh",position:"relative",overflow:"hidden"}}>
+      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box} html,body{margin:0;padding:0;overflow:hidden;width:100%;height:100%;overscroll-behavior:none;position:fixed} ::-webkit-scrollbar{display:none} a{text-decoration:none} button{font-family:inherit} select{-webkit-appearance:none;appearance:none}`}</style>
 
-      {/* Swipe back shadow indicator */}
-      {slideX > 0 && page !== "home" && (
-        <div style={{ position:"fixed", left:0, top:0, bottom:0, width:4, background:"rgba(0,0,0,0.1)", zIndex:999 }} />
-      )}
-
-      <div style={{ transform: slideX > 0 ? `translateX(${slideX}px)` : "none", transition: slideX === 0 ? "transform 0.25s ease" : "none" }}>
+      <div style={{transform:slideX>0?`translateX(${slideX}px)`:"none",transition:slideX===0?"transform 0.25s ease":"none",width:"100%",height:"100vh",overflowY:"auto",overflowX:"hidden"}}>
         {page==="home"&&<Home places={places} countries={countries} countryOrder={countryOrder} onNav={nav} onCountry={c=>{setSelectedCountry(c);setHistory(h=>[...h,"country"]);}} />}
-        {page==="add"&&<Add onBack={goBack} onAdd={p=>setPlaces(ps=>[p,...ps])} countries={countries} types={types} geoData={geoData} />}
-        {page==="country"&&<CountryPage country={selectedCountry} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
+        {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} />}
+        {page==="country"&&<CountryPage country={selectedCountry!} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
         {page==="search"&&<Search places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
         {page==="notes"&&<Notes onBack={goBack} countries={countries} />}
         {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} onBack={goBack} onUpdateCountries={setCountries} onUpdateTypes={setTypes} onUpdateOrder={setCountryOrder} onUpdateGeo={setGeoData} />}
         {page==="detail"&&selected&&(
           <Detail place={selected} onBack={goBack} countries={countries} types={types}
-            onStatusChange={(id,s)=>{setPlaces(ps=>ps.map(p=>p.id===id?{...p,status:s}:p));setSelected(prev=>({...prev,status:s}));}}
-            onEdit={u=>{setPlaces(ps=>ps.map(p=>p.id===u.id?u:p));setSelected(u);}}
-            onDelete={id=>{setPlaces(ps=>ps.filter(p=>p.id!==id));setHistory(["home"]);}} />
+            onStatusChange={handleStatusChange} onEdit={handleEdit} onDelete={handleDelete} />
         )}
       </div>
     </div>
