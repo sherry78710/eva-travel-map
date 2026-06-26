@@ -987,65 +987,80 @@ function CountryPage({ country, places, onBack, onSelect }) {
 // ── Add ───────────────────────────────────────────────────────────────────────
 // ── Address Parser ────────────────────────────────────────────────────────────
 // Simplified→Traditional Chinese mapping for common address terms
-// 韓文地址對應表
-const KR_DISTRICT_MAP: Record<string, { city: string; district: string; neighborhood: string }> = {
-  // 서울 麻浦區
-  "마포구": { city:"首爾", district:"麻浦區", neighborhood:"" },
-  "홍대": { city:"首爾", district:"麻浦區", neighborhood:"弘大" },
-  "연남동": { city:"首爾", district:"麻浦區", neighborhood:"延南" },
-  "망원동": { city:"首爾", district:"麻浦區", neighborhood:"望遠" },
-  "합정동": { city:"首爾", district:"麻浦區", neighborhood:"合井" },
-  "상수동": { city:"首爾", district:"麻浦區", neighborhood:"上水" },
-  // 서울 龍山區
-  "용산구": { city:"首爾", district:"龍山區", neighborhood:"" },
-  "이태원동": { city:"首爾", district:"龍山區", neighborhood:"梨泰院" },
-  "한남동": { city:"首爾", district:"龍山區", neighborhood:"漢南" },
-  // 서울 城東區
-  "성동구": { city:"首爾", district:"城東區", neighborhood:"" },
-  "성수동": { city:"首爾", district:"城東區", neighborhood:"聖水" },
-  "뚝섬": { city:"首爾", district:"城東區", neighborhood:"纛島" },
-  "왕십리": { city:"首爾", district:"城東區", neighborhood:"往十里" },
-  // 서울 江南區
-  "강남구": { city:"首爾", district:"江南區", neighborhood:"" },
-  "압구정동": { city:"首爾", district:"江南區", neighborhood:"狎鷗亭" },
-  "청담동": { city:"首爾", district:"江南區", neighborhood:"清潭" },
-  "신사동": { city:"首爾", district:"江南區", neighborhood:"新沙" },
-  "삼성동": { city:"首爾", district:"江南區", neighborhood:"三成" },
-  // 서울 鐘路區
-  "종로구": { city:"首爾", district:"鐘路區", neighborhood:"" },
-  "인사동": { city:"首爾", district:"鐘路區", neighborhood:"仁寺洞" },
-  "익선동": { city:"首爾", district:"鐘路區", neighborhood:"益善洞" },
-  "삼청동": { city:"首爾", district:"鐘路區", neighborhood:"三清洞" },
-  // 서울 中區
-  "중구": { city:"首爾", district:"中區", neighborhood:"" },
-  "명동": { city:"首爾", district:"中區", neighborhood:"明洞" },
-  "을지로": { city:"首爾", district:"中區", neighborhood:"乙支路" },
-  // 서울 廣津區
-  "광진구": { city:"首爾", district:"廣津區", neighborhood:"" },
-  "건대": { city:"首爾", district:"廣津區", neighborhood:"建大" },
-  // 서울 松坡區
-  "송파구": { city:"首爾", district:"松坡區", neighborhood:"" },
-  "잠실동": { city:"首爾", district:"松坡區", neighborhood:"蠶室" },
-  // 서울 瑞草區
-  "서초구": { city:"首爾", district:"瑞草區", neighborhood:"" },
-  "교대": { city:"首爾", district:"瑞草區", neighborhood:"教大" },
-  // 서울 東大門區
-  "동대문구": { city:"首爾", district:"東大門區", neighborhood:"" },
+// 韓文地址對應表 — 關鍵字對應商圈
+const KR_KEYWORD_MAP: Array<{key:string, city:string, district:string, neighborhood:string}> = [
+  // 麻浦區
+  {key:"홍대",      city:"首爾", district:"麻浦區", neighborhood:"弘大"},
+  {key:"홍익",      city:"首爾", district:"麻浦區", neighborhood:"弘大"},
+  {key:"연남",      city:"首爾", district:"麻浦區", neighborhood:"延南"},
+  {key:"망원",      city:"首爾", district:"麻浦區", neighborhood:"望遠"},
+  {key:"합정",      city:"首爾", district:"麻浦區", neighborhood:"合井"},
+  {key:"상수",      city:"首爾", district:"麻浦區", neighborhood:"上水"},
+  {key:"마포구",    city:"首爾", district:"麻浦區", neighborhood:""},
+  // 龍山區
+  {key:"이태원",    city:"首爾", district:"龍山區", neighborhood:"梨泰院"},
+  {key:"한남",      city:"首爾", district:"龍山區", neighborhood:"漢南"},
+  {key:"해방촌",    city:"首爾", district:"龍山區", neighborhood:"解放村"},
+  {key:"용산구",    city:"首爾", district:"龍山區", neighborhood:""},
+  // 城東區
+  {key:"성수",      city:"首爾", district:"城東區", neighborhood:"聖水"},
+  {key:"뚝섬",      city:"首爾", district:"城東區", neighborhood:"纛島"},
+  {key:"왕십리",    city:"首爾", district:"城東區", neighborhood:"往十里"},
+  {key:"성동구",    city:"首爾", district:"城東區", neighborhood:""},
+  // 江南區
+  {key:"압구정",    city:"首爾", district:"江南區", neighborhood:"狎鷗亭"},
+  {key:"청담",      city:"首爾", district:"江南區", neighborhood:"清潭"},
+  {key:"신사",      city:"首爾", district:"江南區", neighborhood:"新沙"},
+  {key:"가로수길",  city:"首爾", district:"江南區", neighborhood:"林蔭道"},
+  {key:"삼성",      city:"首爾", district:"江南區", neighborhood:"三成"},
+  {key:"강남구",    city:"首爾", district:"江南區", neighborhood:""},
+  // 鐘路區
+  {key:"인사동",    city:"首爾", district:"鐘路區", neighborhood:"仁寺洞"},
+  {key:"익선동",    city:"首爾", district:"鐘路區", neighborhood:"益善洞"},
+  {key:"삼청",      city:"首爾", district:"鐘路區", neighborhood:"三清洞"},
+  {key:"북촌",      city:"首爾", district:"鐘路區", neighborhood:"北村"},
+  {key:"종로구",    city:"首爾", district:"鐘路區", neighborhood:""},
+  // 中區
+  {key:"명동",      city:"首爾", district:"中區",   neighborhood:"明洞"},
+  {key:"을지로",    city:"首爾", district:"中區",   neighborhood:"乙支路"},
+  {key:"남대문",    city:"首爾", district:"中區",   neighborhood:"南大門"},
+  {key:"중구",      city:"首爾", district:"中區",   neighborhood:""},
+  // 廣津區
+  {key:"건대",      city:"首爾", district:"廣津區", neighborhood:"建大"},
+  {key:"자양",      city:"首爾", district:"廣津區", neighborhood:"紫陽洞"},
+  {key:"광진구",    city:"首爾", district:"廣津區", neighborhood:""},
+  // 松坡區
+  {key:"잠실",      city:"首爾", district:"松坡區", neighborhood:"蠶室"},
+  {key:"석촌",      city:"首爾", district:"松坡區", neighborhood:"石村湖"},
+  {key:"송파구",    city:"首爾", district:"松坡區", neighborhood:""},
+  // 瑞草區
+  {key:"교대",      city:"首爾", district:"瑞草區", neighborhood:"教大"},
+  {key:"서초구",    city:"首爾", district:"瑞草區", neighborhood:""},
+  // 東大門區
+  {key:"동대문",    city:"首爾", district:"東大門區", neighborhood:"東大門"},
+  {key:"광장시장",  city:"首爾", district:"東大門區", neighborhood:"廣藏市場"},
   // 釜山
-  "해운대구": { city:"釜山", district:"海雲台區", neighborhood:"" },
-  "해운대": { city:"釜山", district:"海雲台區", neighborhood:"海雲台" },
-  "광안리": { city:"釜山", district:"海雲台區", neighborhood:"廣安里" },
-  "부산진구": { city:"釜山", district:"釜山鎮區", neighborhood:"" },
-  "서면": { city:"釜山", district:"釜山鎮區", neighborhood:"西面" },
-};
+  {key:"해운대",    city:"釜山", district:"海雲台區", neighborhood:"海雲台"},
+  {key:"광안리",    city:"釜山", district:"海雲台區", neighborhood:"廣安里"},
+  {key:"서면",      city:"釜山", district:"釜山鎮區", neighborhood:"西面"},
+  {key:"남포",      city:"釜山", district:"中區",     neighborhood:"南浦洞"},
+];
 
 function parseKoreanAddress(addr: string): { city?: string; district?: string; neighborhood?: string } | null {
   const lower = addr.toLowerCase();
-  // 先找最精確的（洞/동 level）
-  for (const [key, val] of Object.entries(KR_DISTRICT_MAP)) {
-    if (lower.includes(key)) {
-      return val;
+  // 按關鍵字長度排序（長的優先，避免「한남」被「남」先匹配）
+  const sorted = [...KR_KEYWORD_MAP].sort((a,b)=>b.key.length-a.key.length);
+  for(const item of sorted){
+    if(lower.includes(item.key)){
+      return { city:item.city, district:item.district, neighborhood:item.neighborhood };
     }
+  }
+  // 只有서울，帶國家城市
+  if(lower.includes("서울")||lower.includes("seoul")){
+    return { city:"首爾", district:"", neighborhood:"" };
+  }
+  if(lower.includes("부산")||lower.includes("busan")){
+    return { city:"釜山", district:"", neighborhood:"" };
   }
   return null;
 }
@@ -1808,7 +1823,10 @@ export default function App() {
       if(settingsRes.data){
         const s = settingsRes.data;
         if(s.types?.length) setTypes(s.types);
-        if(s.country_order?.length) setCountryOrder(s.country_order);
+        if(s.country_order?.length){
+          setCountryOrder(s.country_order);
+          setCountries(s.country_order);
+        }
         if(s.note_cats?.length) setNoteCats(s.note_cats);
         if(s.geo_data && Object.keys(s.geo_data).length){
           // 把儲存的自訂商圈合併進 GEO
