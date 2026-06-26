@@ -836,15 +836,16 @@ function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCou
 
 // ── Home ──────────────────────────────────────────────────────────────────────
 function Home({ places, countries, countryOrder, onNav, onCountry }) {
-  const byCountry = {};
-  places.forEach(p=>{ byCountry[p.country]=(byCountry[p.country]||0)+1; });
+  const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
+  const byCountry:any = {};
+  places.forEach((p:any)=>{ byCountry[p.country]=(byCountry[p.country]||0)+1; });
   const orderedActive = countryOrder.filter(c=>byCountry[c]);
 
   return (
     <div style={{ display:"flex", flexDirection:"column", width:"100%", height:"100%", background:"#F5F0EB" }}>
       {/* 固定頂部 */}
       <div style={{ flexShrink:0, background:"#F5F0EB", paddingTop:"env(safe-area-inset-top)" }}>
-        {/* 按鈕列 — 白底卡片 */}
+        {/* 按鈕列 */}
         <div style={{ background:"#FDF8F3", padding:"12px 20px 14px" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <div style={{ display:"flex", gap:8 }}>
@@ -855,8 +856,7 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
             <button onClick={()=>onNav("settings")} style={{ background:"#F5F0EB", border:"none", borderRadius:12, width:38, height:38, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:17, flexShrink:0 }}>⚙️</button>
           </div>
         </div>
-
-        {/* 國家列 — 獨立區塊，中間有間距 */}
+        {/* 國家列 */}
         {orderedActive.length>0 && (
           <div style={{ padding:"10px 20px 0" }}>
             <div style={{ fontSize:12, fontWeight:600, color:"#8E8E93", marginBottom:8 }}>國家</div>
@@ -870,22 +870,53 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
             </div>
           </div>
         )}
-        {/* 所有收藏標題 */}
-        <div style={{ padding:"8px 20px 6px" }}>
+        {/* 所有收藏標題 + 切換按鈕 */}
+        <div style={{ padding:"8px 20px 6px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div style={{ fontSize:12, fontWeight:600, color:"#8E8E93" }}>所有收藏</div>
+          <div style={{ display:"flex", gap:4 }}>
+            <button onClick={()=>setViewMode('list')} style={{ background:viewMode==='list'?"#3C3C3C":"none", border:"none", borderRadius:6, padding:"4px 7px", cursor:"pointer", display:"flex", alignItems:"center", gap:1.5, flexDirection:"column" }}>
+              {[0,1,2].map(i=><div key={i} style={{ width:12, height:2, background:viewMode==='list'?"white":"#8E8E93", borderRadius:1 }} />)}
+            </button>
+            <button onClick={()=>setViewMode('grid')} style={{ background:viewMode==='grid'?"#3C3C3C":"none", border:"none", borderRadius:6, padding:"4px 7px", cursor:"pointer", display:"grid", gridTemplateColumns:"1fr 1fr", gap:2 }}>
+              {[0,1,2,3].map(i=><div key={i} style={{ width:6, height:6, background:viewMode==='grid'?"white":"#8E8E93", borderRadius:1 }} />)}
+            </button>
+          </div>
         </div>
       </div>
 
       {/* 滾動區域 */}
       <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"0 20px 40px" }}>
-        <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden" }}>
-          {places.length===0 && <div style={{ padding:"30px 16px", textAlign:"center", color:"#8E8E93", fontSize:14 }}>還沒有收藏</div>}
-          {places.map((p,i)=>(
-            <div key={p.id} style={{ borderBottom:i<places.length-1?"1px solid #EDE8E2":"none" }}>
-              <PlaceRow place={p} onClick={()=>onNav("detail",p)} />
-            </div>
-          ))}
-        </div>
+        {places.length===0 && <div style={{ padding:"30px 16px", textAlign:"center", color:"#8E8E93", fontSize:14 }}>還沒有收藏</div>}
+
+        {viewMode==='list' && (
+          <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden" }}>
+            {places.map((p:any,i:number)=>(
+              <div key={p.id} style={{ borderBottom:i<places.length-1?"1px solid #EDE8E2":"none" }}>
+                <PlaceRow place={p} onClick={()=>onNav("detail",p)} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {viewMode==='grid' && (
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, paddingTop:4 }}>
+            {places.map((p:any)=>(
+              <button key={p.id} onClick={()=>onNav("detail",p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left" }}>
+                <div style={{ height:110, background:p.photos?.[0]?"none":"#EDE8E2", position:"relative", overflow:"hidden" }}>
+                  {p.photos?.[0]
+                    ? <img src={p.photos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                    : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>{p.types?.[0]==="餐廳"?"🍽️":p.types?.[0]==="咖啡廳"?"☕":p.types?.[0]==="景點"?"🌸":p.types?.[0]==="市場"?"🛒":"📍"}</div>
+                  }
+                </div>
+                <div style={{ padding:"8px 10px 10px" }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
+                  <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
+                  <div style={{ fontSize:10, color:"#C7C7CC", marginTop:2 }}>{STATUS_CFG[p.status as keyof typeof STATUS_CFG]?.mark} {STATUS_CFG[p.status as keyof typeof STATUS_CFG]?.label}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -894,34 +925,34 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
 // ── Country ───────────────────────────────────────────────────────────────────
 function CountryPage({ country, places, onBack, onSelect }) {
   const [q, setQ] = useState("");
-  const [collapsed, setCollapsed] = useState({});
+  const [collapsed, setCollapsed] = useState<any>({});
   const [filterStatus, setFilterStatus] = useState("");
+  const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
 
-  const list = places.filter(p => p.country === country);
+  const list = places.filter((p:any) => p.country === country);
 
-  // Filter by search + status
-  const filtered = list.filter(p => {
+  const filtered = list.filter((p:any) => {
     const lq = q.toLowerCase();
-    const mQ = !q.trim() || [p.name, p.neighborhood, p.note||"", p.review||"", ...(p.recommendations||[]), ...(p.types||[])].some(s => s.toLowerCase().includes(lq));
+    const mQ = !q.trim() || [p.name, p.neighborhood, p.note||"", p.review||"", ...(p.recommendations||[]), ...(p.types||[])].some((s:string) => s.toLowerCase().includes(lq));
     const mS = !filterStatus || p.status === filterStatus;
     return mQ && mS;
   });
 
-  // Group by neighborhood
-  const grouped = {};
-  filtered.forEach(p => {
+  const grouped:any = {};
+  filtered.forEach((p:any) => {
     const key = p.neighborhood || "其他";
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(p);
   });
 
-  function toggleCollapse(nb) {
-    setCollapsed(c => ({ ...c, [nb]: !c[nb] }));
+  function toggleCollapse(nb:string) {
+    setCollapsed((c:any) => ({ ...c, [nb]: !c[nb] }));
   }
 
   return (
-    <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
-      <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 12px)", paddingBottom:"12px", paddingLeft:"20px", paddingRight:"20px" }}>
+    <div style={{ display:"flex", flexDirection:"column", width:"100%", height:"100%", background:"#F5F0EB" }}>
+      {/* 固定頂部 */}
+      <div style={{ flexShrink:0, background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 12px)", paddingBottom:12, paddingLeft:20, paddingRight:20 }}>
         <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0, marginBottom:12 }}>‹ 返回</button>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
           <span style={{ fontSize:28 }}>{COUNTRY_FLAGS[country]||"🌍"}</span>
@@ -930,49 +961,82 @@ function CountryPage({ country, places, onBack, onSelect }) {
             <div style={{ fontSize:12, color:"#8E8E93" }}>{list.length} 個收藏 · {Object.keys(grouped).length} 個商圈</div>
           </div>
         </div>
-        {/* Status filter buttons */}
+        {/* 狀態篩選 */}
         <div style={{ display:"flex", gap:8, marginBottom:14 }}>
           {Object.entries(STATUS_CFG).map(([k,s])=>{
-            const count = list.filter(p=>p.status===k).length;
+            const count = list.filter((p:any)=>p.status===k).length;
             const active = filterStatus === k;
             return (
               <button key={k} onClick={()=>setFilterStatus(active?"":k)}
-                style={{ flex:1, background:active?"#3C3C3C":"#F5F0EB", borderRadius:12, padding:"10px 0", textAlign:"center", border:"none", cursor:"pointer", transition:"all 0.15s" }}>
+                style={{ flex:1, background:active?"#3C3C3C":"#F5F0EB", borderRadius:12, padding:"10px 0", textAlign:"center", border:"none", cursor:"pointer" }}>
                 <div style={{ fontSize:20, fontWeight:700, color:active?"white":"#000", lineHeight:1 }}>{count}</div>
                 <div style={{ fontSize:10, color:active?"rgba(255,255,255,0.7)":"#8E8E93", marginTop:3 }}>{s.mark} {s.label}</div>
               </button>
             );
           })}
         </div>
-        {/* Search */}
-        <div style={{ display:"flex", alignItems:"center", gap:10, background:"#F5F0EB", borderRadius:12, padding:"10px 14px" }}>
+        {/* 搜尋 */}
+        <div style={{ display:"flex", alignItems:"center", gap:10, background:"#F5F0EB", borderRadius:12, padding:"10px 14px", marginBottom:10 }}>
           <span style={{ fontSize:14, color:"#8E8E93" }}>🔍</span>
           <input value={q} onChange={e=>setQ(e.target.value)} placeholder="搜尋地點、推薦品項、備註..."
             style={{ flex:1, border:"none", outline:"none", fontSize:15, background:"none", color:"#000", fontFamily:"inherit" }} />
           {(q||filterStatus) && <button onClick={()=>{setQ("");setFilterStatus("");}} style={{ background:"none", border:"none", color:"#8E8E93", fontSize:16, cursor:"pointer", padding:0 }}>✕</button>}
         </div>
+        {/* 切換按鈕 */}
+        <div style={{ display:"flex", justifyContent:"flex-end", gap:4 }}>
+          <button onClick={()=>setViewMode('list')} style={{ background:viewMode==='list'?"#3C3C3C":"none", border:"none", borderRadius:6, padding:"4px 7px", cursor:"pointer", display:"flex", alignItems:"center", gap:1.5, flexDirection:"column" }}>
+            {[0,1,2].map(i=><div key={i} style={{ width:12, height:2, background:viewMode==='list'?"white":"#8E8E93", borderRadius:1 }} />)}
+          </button>
+          <button onClick={()=>setViewMode('grid')} style={{ background:viewMode==='grid'?"#3C3C3C":"none", border:"none", borderRadius:6, padding:"4px 7px", cursor:"pointer", display:"grid", gridTemplateColumns:"1fr 1fr", gap:2 }}>
+            {[0,1,2,3].map(i=><div key={i} style={{ width:6, height:6, background:viewMode==='grid'?"white":"#8E8E93", borderRadius:1 }} />)}
+          </button>
+        </div>
       </div>
 
-      <div style={{ padding:"16px 20px 40px" }}>
+      {/* 滾動區域 */}
+      <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"12px 20px 40px" }}>
         {filtered.length === 0 && (
           <div style={{ textAlign:"center", padding:"60px 0", color:"#8E8E93", fontSize:15 }}>{q||filterStatus ? "沒有符合的地點" : "還沒有收藏"}</div>
         )}
-        {Object.entries(grouped).map(([nb, nbPlaces]) => {
+
+        {Object.entries(grouped).map(([nb, nbPlaces]:any) => {
           const isCollapsed = collapsed[nb];
           return (
             <div key={nb} style={{ marginBottom:16 }}>
+              {/* 商圈標題 — 可收合 */}
               <button onClick={() => toggleCollapse(nb)} style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between", background:"none", border:"none", cursor:"pointer", padding:"0 0 8px 0", textAlign:"left" }}>
                 <div style={{ fontSize:12, fontWeight:600, color:"#8E8E93", letterSpacing:0.3 }}>
                   {nb}{nbPlaces[0]?.district ? ` · ${nbPlaces[0].district}` : ""} <span style={{ fontWeight:400 }}>({nbPlaces.length})</span>
                 </div>
                 <span style={{ fontSize:12, color:"#C7C7CC", transform:isCollapsed?"rotate(-90deg)":"rotate(0deg)", transition:"transform 0.2s" }}>▼</span>
               </button>
-              {!isCollapsed && (
+
+              {!isCollapsed && viewMode==='list' && (
                 <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden" }}>
-                  {nbPlaces.map((p,i)=>(
+                  {nbPlaces.map((p:any,i:number)=>(
                     <div key={p.id} style={{ borderBottom:i<nbPlaces.length-1?"1px solid #EDE8E2":"none" }}>
                       <PlaceRow place={p} onClick={()=>onSelect(p)} />
                     </div>
+                  ))}
+                </div>
+              )}
+
+              {!isCollapsed && viewMode==='grid' && (
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                  {nbPlaces.map((p:any)=>(
+                    <button key={p.id} onClick={()=>onSelect(p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left" }}>
+                      <div style={{ height:110, background:"#EDE8E2", position:"relative", overflow:"hidden" }}>
+                        {p.photos?.[0]
+                          ? <img src={p.photos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                          : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>{p.types?.[0]==="餐廳"?"🍽️":p.types?.[0]==="咖啡廳"?"☕":p.types?.[0]==="景點"?"🌸":p.types?.[0]==="市場"?"🛒":"📍"}</div>
+                        }
+                      </div>
+                      <div style={{ padding:"8px 10px 10px" }}>
+                        <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
+                        <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
+                        <div style={{ fontSize:10, color:"#C7C7CC", marginTop:2 }}>{STATUS_CFG[p.status as keyof typeof STATUS_CFG]?.mark} {STATUS_CFG[p.status as keyof typeof STATUS_CFG]?.label}</div>
+                      </div>
+                    </button>
                   ))}
                 </div>
               )}
