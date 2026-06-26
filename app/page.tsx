@@ -822,15 +822,10 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
 
   return (
     <div style={{ height:"100dvh", background:"#F5F0EB", display:"flex", flexDirection:"column" }}>
-      {/* 固定頂部 — 狀態列同色延伸到按鈕列 */}
-      <div style={{
-        flexShrink:0,
-        background:"#FDF8F3",
-        paddingTop:"env(safe-area-inset-top)",
-        boxShadow:"0 1px 0 #EDE8E2",
-      }}>
+      {/* 固定頂部 */}
+      <div style={{ flexShrink:0, background:"#FDF8F3", paddingTop:"env(safe-area-inset-top)", boxShadow:"0 1px 0 #EDE8E2" }}>
         {/* 按鈕列 */}
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 20px 10px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 20px 12px" }}>
           <div style={{ display:"flex", gap:8 }}>
             <button onClick={()=>onNav("add")} style={{ padding:"10px 20px", background:"#000", borderRadius:22, fontSize:14, fontWeight:600, color:"white", border:"none", cursor:"pointer" }}>+ 新增收藏</button>
             <button onClick={()=>onNav("search")} style={{ padding:"10px 18px", background:"#F5F0EB", borderRadius:22, fontSize:14, color:"#000", border:"none", cursor:"pointer" }}>搜尋</button>
@@ -838,15 +833,18 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
           </div>
           <button onClick={()=>onNav("settings")} style={{ background:"#F5F0EB", border:"none", borderRadius:12, width:38, height:38, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:17, flexShrink:0 }}>⚙️</button>
         </div>
-        {/* 國家列 */}
+        {/* 國家列 — 分開一排 */}
         {orderedActive.length>0 && (
-          <div style={{ display:"flex", gap:8, overflowX:"auto", padding:"0 20px 12px", WebkitOverflowScrolling:"touch" }}>
-            {orderedActive.map(c=>(
-              <button key={c} onClick={()=>onCountry(c)} style={{ flexShrink:0, background:"#F5F0EB", border:"none", borderRadius:22, padding:"9px 16px", display:"flex", alignItems:"center", gap:7, cursor:"pointer" }}>
-                <span style={{ fontSize:20 }}>{COUNTRY_FLAGS[c]||"🌍"}</span>
-                <span style={{ fontSize:14, fontWeight:600, color:"#000" }}>{c}</span>
-              </button>
-            ))}
+          <div style={{ borderTop:"1px solid #EDE8E2", padding:"10px 20px 10px" }}>
+            <div style={{ fontSize:12, fontWeight:600, color:"#8E8E93", marginBottom:8 }}>國家</div>
+            <div style={{ display:"flex", gap:8, overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
+              {orderedActive.map(c=>(
+                <button key={c} onClick={()=>onCountry(c)} style={{ flexShrink:0, background:"#F5F0EB", border:"none", borderRadius:22, padding:"9px 16px", display:"flex", alignItems:"center", gap:7, cursor:"pointer" }}>
+                  <span style={{ fontSize:20 }}>{COUNTRY_FLAGS[c]||"🌍"}</span>
+                  <span style={{ fontSize:14, fontWeight:600, color:"#000" }}>{c}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
