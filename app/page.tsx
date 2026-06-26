@@ -821,7 +821,7 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
   const orderedActive = countryOrder.filter(c=>byCountry[c]);
 
   return (
-    <div style={{ height:"100dvh", background:"#F5F0EB", display:"flex", flexDirection:"column" }}>
+    <div style={{ display:"flex", flexDirection:"column", height:"100%", background:"#F5F0EB" }}>
       {/* 固定頂部 */}
       <div style={{ flexShrink:0, background:"#F5F0EB", paddingTop:"env(safe-area-inset-top)" }}>
         {/* 按鈕列 — 白底卡片 */}
@@ -1501,9 +1501,10 @@ export default function App() {
     sb.from('places').select('*').order('created_at',{ascending:false})
       .then(({data, error})=>{
         if(data) setPlaces(data);
+        else setPlaces([]);
         setLoading(false);
       })
-      .catch(()=>{ setLoading(false); });
+      .catch(()=>{ setPlaces([]); setLoading(false); });
   },[]);
 
   const page = history[history.length-1];
