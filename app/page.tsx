@@ -488,6 +488,7 @@ function LocationSelector({ country, city, district, neighborhood, countries, ge
           const firstNb = getNeighborhoods(c, firstCity, firstDist)[0]||"";
           onChange({ country:c, city:firstCity, district:firstDist, neighborhood:firstNb });
         }} style={sel}>
+          <option value="">請選擇</option>
           {countries.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </Row>
@@ -680,26 +681,29 @@ function GeoEditor({ countries, geoData, onUpdateGeo }) {
 
 function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCountries, onUpdateTypes, onUpdateOrder, onUpdateGeo }) {
   const [tab, setTab] = useState("countries");
-  const [expandedCountry, setExpandedCountry] = useState(null);
-  const [expandedCity, setExpandedCity] = useState(null);
+  const [expandedCountry, setExpandedCountry] = useState<string|null>(null);
+  const [expandedCity, setExpandedCity] = useState<string|null>(null);
   const [newCountry, setNewCountry] = useState("");
   const [newType, setNewType] = useState("");
-  const [dragIdx, setDragIdx] = useState(null);
+  const [newCity, setNewCity] = useState("");
+  const [newNb, setNewNb] = useState("");
+  const [newDist, setNewDist] = useState("");
+  const [dragIdx, setDragIdx] = useState<number|null>(null);
   const [dragY, setDragY] = useState(0);
-  const [overIdx, setOverIdx] = useState(null);
-  const [dragIdxT, setDragIdxT] = useState(null);
+  const [overIdx, setOverIdx] = useState<number|null>(null);
+  const [dragIdxT, setDragIdxT] = useState<number|null>(null);
   const [dragYT, setDragYT] = useState(0);
-  const [overIdxT, setOverIdxT] = useState(null);
+  const [overIdxT, setOverIdxT] = useState<number|null>(null);
   const touchStartY = useRef(0);
   const touchStartYT = useRef(0);
   const ITEM_H = 52;
 
-  function onTouchStartT(e, i) {
+  function onTouchStartT(e:any, i:number) {
     e.preventDefault();
     touchStartYT.current = e.touches[0].clientY;
     setDragIdxT(i); setDragYT(0); setOverIdxT(i);
   }
-  function onTouchMoveT(e) {
+  function onTouchMoveT(e:any) {
     if (dragIdxT===null) return;
     e.preventDefault();
     const dy = e.touches[0].clientY - touchStartYT.current;
@@ -714,14 +718,14 @@ function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCou
     setDragIdxT(null); setDragYT(0); setOverIdxT(null);
   }
 
-  const list = countryOrder.filter(c=>countries.includes(c));
+  const list = countryOrder.filter((c:string)=>countries.includes(c));
 
-  function onTouchStart(e, i) {
+  function onTouchStart(e:any, i:number) {
     e.preventDefault();
     touchStartY.current = e.touches[0].clientY;
     setDragIdx(i); setDragY(0); setOverIdx(i);
   }
-  function onTouchMove(e) {
+  function onTouchMove(e:any) {
     if (dragIdx===null) return;
     e.preventDefault();
     const dy = e.touches[0].clientY - touchStartY.current;
@@ -736,84 +740,173 @@ function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCou
     setDragIdx(null); setDragY(0); setOverIdx(null);
   }
 
+  function addCity(country:string) {
+    const city = newCity.trim();
+    if (!city) return;
+    const updated = { ...geoData, [country]: { ...(geoData[country]||{}), [city]: {} } };
+    onUpdateGeo(updated);
+    setNewCity("");
+  }
+
+  function deleteCity(country:string, city:string) {
+    const updated = { ...geoData, [country]: { ...(geoData[country]||{}) } };
+    delete updated[country][city];
+    onUpdateGeo(updated);
+    setExpandedCity(null);
+  }
+
+  function addNb(country:string, city:string) {
+    const nb = newNb.trim();
+    const dist = newDist.trim() || "其他";
+    if (!nb) return;
+    const cityData = geoData[country]?.[city] || {};
+    const distNbs = cityData[dist] || [];
+    if (distNbs.includes(nb)) return;
+    const updated = { ...geoData, [country]: { ...(geoData[country]||{}), [city]: { ...cityData, [dist]: [...distNbs, nb] } } };
+    onUpdateGeo(updated);
+    setNewNb("");
+  }
+
+  function deleteNb(country:string, city:string, dist:string, nb:string) {
+    const cityData = geoData[country]?.[city] || {};
+    const updated = { ...geoData, [country]: { ...(geoData[country]||{}), [city]: { ...cityData, [dist]: (cityData[dist]||[]).filter((x:string)=>x!==nb) } } };
+    onUpdateGeo(updated);
+  }
+
   return (
-    <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
-      <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 16px)", paddingBottom:"0", paddingLeft:"20px", paddingRight:"20px" }}>
+    <div style={{ display:"flex", flexDirection:"column", width:"100%", height:"100%", background:"#F5F0EB" }}>
+      <div style={{ flexShrink:0, background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 16px)", paddingBottom:0, paddingLeft:20, paddingRight:20 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0 }}>‹ 返回</button>
           <div style={{ fontSize:17, fontWeight:600 }}>設定</div>
           <div style={{ width:40 }} />
         </div>
         <div style={{ display:"flex" }}>
-          {[["countries","國家"],["types","類別"],["geo","城市商圈"]].map(([k,l]) => (
+          {[["countries","國家與商圈"],["types","類別"]].map(([k,l]) => (
             <button key={k} onClick={()=>setTab(k)} style={{ flex:1, padding:"10px 0", border:"none", background:"none", borderBottom:tab===k?"2px solid #000":"2px solid transparent", color:tab===k?"#000":"#8E8E93", fontSize:14, fontWeight:tab===k?600:400, cursor:"pointer" }}>{l}</button>
           ))}
         </div>
       </div>
 
-      <div style={{ padding:"16px 20px 40px" }}>
+      <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"16px 20px 40px" }}>
+        {/* ── 國家與商圈 ── */}
         {tab==="countries" && (
           <>
-            <div style={{ fontSize:12, color:"#8E8E93", marginBottom:8 }}>按住 ⠿ 拖拉調整首頁順序</div>
+            <div style={{ fontSize:12, color:"#8E8E93", marginBottom:8 }}>按住 ⠿ 拖拉調整首頁順序，點開可管理城市和商圈</div>
             <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
-              {list.map((c,i) => {
+              {list.map((c:string,i:number) => {
                 const isDragging = dragIdx===i;
+                const isExpanded = expandedCountry===c;
                 let ty = 0;
                 if (dragIdx!==null && !isDragging) {
-                  if (dragIdx<overIdx && i>dragIdx && i<=overIdx) ty=-ITEM_H;
-                  else if (dragIdx>overIdx && i<dragIdx && i>=overIdx) ty=ITEM_H;
+                  if (dragIdx<(overIdx||0) && i>dragIdx && i<=(overIdx||0)) ty=-ITEM_H;
+                  else if (dragIdx>(overIdx||0) && i<dragIdx && i>=(overIdx||0)) ty=ITEM_H;
                 }
+                const cityData = geoData[c] || {};
+                const cities = Object.keys(cityData);
                 return (
-                  <div key={c} style={{ display:"flex", alignItems:"center", padding:"14px 16px", borderBottom:i<list.length-1?"1px solid #EDE8E2":"none", background:isDragging?"#F0F7FF":"#FFF", transform:isDragging?`translateY(${dragY}px) scale(1.02)`:`translateY(${ty}px)`, transition:isDragging?"none":"transform 0.2s ease", boxShadow:isDragging?"0 4px 16px rgba(0,0,0,0.1)":"none", position:"relative", zIndex:isDragging?10:1, userSelect:"none" }}>
-                    <span style={{ fontSize:20, marginRight:10 }}>{COUNTRY_FLAGS[c]||"🌍"}</span>
-                    <span style={{ fontSize:15, color:"#000", flex:1 }}>{c}</span>
-                    <span onTouchStart={e=>onTouchStart(e,i)} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
-                      style={{ fontSize:18, color:"#C7C7CC", marginRight:14, padding:"0 6px", touchAction:"none" }}>⠿</span>
-                    <button onClick={()=>{ onUpdateCountries(countries.filter(x=>x!==c)); onUpdateOrder(countryOrder.filter(x=>x!==c)); }}
-                      style={{ background:"none", border:"none", color:"#FF3B30", fontSize:13, cursor:"pointer", padding:0 }}>刪除</button>
+                  <div key={c} style={{ borderBottom:i<list.length-1?"1px solid #EDE8E2":"none" }}>
+                    {/* 國家列 */}
+                    <div style={{ display:"flex", alignItems:"center", padding:"14px 16px", background:isDragging?"#EEF4FF":"#FDF8F3", transform:isDragging?`translateY(${dragY}px) scale(1.02)`:`translateY(${ty}px)`, transition:isDragging?"none":"transform 0.2s ease", position:"relative", zIndex:isDragging?10:1, userSelect:"none" }}>
+                      <button onClick={()=>setExpandedCountry(isExpanded?null:c)} style={{ background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", flex:1, padding:0 }}>
+                        <span style={{ fontSize:20, marginRight:10 }}>{COUNTRY_FLAGS[c]||"🌍"}</span>
+                        <span style={{ fontSize:15, color:"#000", flex:1, textAlign:"left" }}>{c}</span>
+                        <span style={{ fontSize:11, color:"#C7C7CC", marginRight:8 }}>{cities.length}個城市 {isExpanded?"▲":"▼"}</span>
+                      </button>
+                      <span onTouchStart={e=>onTouchStart(e,i)} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+                        style={{ fontSize:18, color:"#C7C7CC", marginRight:12, padding:"0 6px", touchAction:"none" }}>⠿</span>
+                      <button onClick={()=>{ onUpdateCountries(countries.filter((x:string)=>x!==c)); onUpdateOrder(countryOrder.filter((x:string)=>x!==c)); }}
+                        style={{ background:"none", border:"none", color:"#FF3B30", fontSize:13, cursor:"pointer", padding:0 }}>刪除</button>
+                    </div>
+
+                    {/* 展開：城市列表 */}
+                    {isExpanded && (
+                      <div style={{ background:"#F5F0EB", padding:"8px 16px 12px 16px" }}>
+                        {/* 新增城市 */}
+                        <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+                          <input value={newCity} onChange={e=>setNewCity(e.target.value)} placeholder="新增城市"
+                            style={{ flex:1, border:"none", outline:"none", fontSize:13, background:"#FDF8F3", borderRadius:8, padding:"7px 10px", fontFamily:"inherit" }} />
+                          <button onClick={()=>addCity(c)} style={{ background:"#000", border:"none", borderRadius:8, padding:"7px 12px", color:"white", fontSize:13, cursor:"pointer" }}>+</button>
+                        </div>
+                        {cities.map(city=>{
+                          const cityKey = `${c}:${city}`;
+                          const isCityExpanded = expandedCity===cityKey;
+                          const districts = cityData[city] || {};
+                          return (
+                            <div key={city} style={{ background:"#FDF8F3", borderRadius:10, marginBottom:6, overflow:"hidden" }}>
+                              <div style={{ display:"flex", alignItems:"center", padding:"10px 12px" }}>
+                                <button onClick={()=>setExpandedCity(isCityExpanded?null:cityKey)} style={{ flex:1, background:"none", border:"none", textAlign:"left", cursor:"pointer", fontSize:14, color:"#000" }}>
+                                  {city} <span style={{ fontSize:11, color:"#C7C7CC" }}>({Object.values(districts).flat().length} 商圈)</span>
+                                </button>
+                                <button onClick={()=>deleteCity(c,city)} style={{ background:"none", border:"none", color:"#FF3B30", fontSize:12, cursor:"pointer" }}>刪除</button>
+                              </div>
+                              {isCityExpanded && (
+                                <div style={{ borderTop:"1px solid #EDE8E2", padding:"10px 12px" }}>
+                                  {Object.entries(districts).map(([dist, nbs]:any)=>(
+                                    <div key={dist} style={{ marginBottom:8 }}>
+                                      <div style={{ fontSize:11, color:"#8E8E93", marginBottom:4 }}>{dist}</div>
+                                      <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                                        {nbs.map((nb:string)=>(
+                                          <div key={nb} style={{ display:"flex", alignItems:"center", gap:3, background:"#F5F0EB", borderRadius:8, padding:"3px 8px" }}>
+                                            <span style={{ fontSize:12 }}>{nb}</span>
+                                            <button onClick={()=>deleteNb(c,city,dist,nb)} style={{ background:"none", border:"none", color:"#C7C7CC", fontSize:11, cursor:"pointer", padding:0 }}>×</button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                  <div style={{ display:"flex", gap:6, marginTop:6 }}>
+                                    <input value={newDist} onChange={e=>setNewDist(e.target.value)} placeholder="行政區（選填）"
+                                      style={{ width:100, border:"none", outline:"none", fontSize:12, background:"#F5F0EB", borderRadius:8, padding:"5px 8px", fontFamily:"inherit" }} />
+                                    <input value={newNb} onChange={e=>setNewNb(e.target.value)} placeholder="新增商圈"
+                                      style={{ flex:1, border:"none", outline:"none", fontSize:12, background:"#F5F0EB", borderRadius:8, padding:"5px 8px", fontFamily:"inherit" }} />
+                                    <button onClick={()=>addNb(c,city)} style={{ background:"#000", border:"none", borderRadius:8, padding:"5px 10px", color:"white", fontSize:12, cursor:"pointer" }}>+</button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
+            {/* 新增國家 */}
             <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden" }}>
               <div style={{ display:"flex", padding:"12px 16px", gap:10, alignItems:"center", borderBottom:"1px solid #EDE8E2" }}>
-                <input value={newCountry} onChange={e=>setNewCountry(e.target.value)} placeholder=""
+                <input value={newCountry} onChange={e=>setNewCountry(e.target.value)} placeholder="新增國家"
                   style={{ flex:1, border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
                 <button onClick={()=>{ const c=newCountry.trim(); if(c&&!countries.includes(c)){ onUpdateCountries([...countries,c]); onUpdateOrder([...countryOrder,c]); setNewCountry(""); }}}
                   style={{ background:"#000", border:"none", borderRadius:10, padding:"6px 14px", color:"white", fontSize:13, fontWeight:600, cursor:"pointer" }}>新增</button>
               </div>
               <div style={{ padding:"10px 16px", fontSize:12, color:"#8E8E93" }}>
-                {newCountry && !COUNTRY_FLAGS[newCountry.trim()] && (
-                  <span>💡 若無預設旗幟，可輸入 emoji 旗幟加在國家名稱後，例：「寮國🇱🇦」</span>
-                )}
-                {newCountry && COUNTRY_FLAGS[newCountry.trim()] && (
-                  <span>旗幟預覽：{COUNTRY_FLAGS[newCountry.trim()]} {newCountry}</span>
-                )}
+                {newCountry && COUNTRY_FLAGS[newCountry.trim()] && <span>旗幟預覽：{COUNTRY_FLAGS[newCountry.trim()]} {newCountry}</span>}
+                {newCountry && !COUNTRY_FLAGS[newCountry.trim()] && <span>💡 若無預設旗幟，可在名稱後加 emoji，例：「寮國🇱🇦」</span>}
               </div>
             </div>
           </>
         )}
 
+        {/* ── 類別 ── */}
         {tab==="types" && (
           <>
             <div style={{ fontSize:12, color:"#8E8E93", marginBottom:8 }}>按住 ⠿ 拖拉調整順序</div>
             <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
-              {types.map((t, i) => {
+              {types.map((t:string, i:number) => {
                 const isDraggingT = dragIdxT===i;
                 let tyT = 0;
                 if (dragIdxT!==null && !isDraggingT) {
-                  if (dragIdxT<overIdxT && i>dragIdxT && i<=overIdxT) tyT=-ITEM_H;
-                  else if (dragIdxT>overIdxT && i<dragIdxT && i>=overIdxT) tyT=ITEM_H;
+                  if (dragIdxT<(overIdxT||0) && i>dragIdxT && i<=(overIdxT||0)) tyT=-ITEM_H;
+                  else if (dragIdxT>(overIdxT||0) && i<dragIdxT && i>=(overIdxT||0)) tyT=ITEM_H;
                 }
                 return (
-                  <div key={t} style={{ display:"flex", alignItems:"center", padding:"14px 16px", borderBottom:i<types.length-1?"1px solid #EDE8E2":"none", background:isDraggingT?"#F0F7FF":"#FFF", transform:isDraggingT?`translateY(${dragYT}px) scale(1.02)`:`translateY(${tyT}px)`, transition:isDraggingT?"none":"transform 0.2s ease", boxShadow:isDraggingT?"0 4px 16px rgba(0,0,0,0.1)":"none", position:"relative", zIndex:isDraggingT?10:1, userSelect:"none" }}>
+                  <div key={t} style={{ display:"flex", alignItems:"center", padding:"14px 16px", borderBottom:i<types.length-1?"1px solid #EDE8E2":"none", background:isDraggingT?"#EEF4FF":"#FDF8F3", transform:isDraggingT?`translateY(${dragYT}px) scale(1.02)`:`translateY(${tyT}px)`, transition:isDraggingT?"none":"transform 0.2s ease", position:"relative", zIndex:isDraggingT?10:1, userSelect:"none" }}>
                     <span style={{ fontSize:15, color:"#000", flex:1 }}>{t}</span>
-                    <span
-                      onTouchStart={e=>onTouchStartT(e,i)}
-                      onTouchMove={onTouchMoveT}
-                      onTouchEnd={onTouchEndT}
+                    <span onTouchStart={e=>onTouchStartT(e,i)} onTouchMove={onTouchMoveT} onTouchEnd={onTouchEndT}
                       style={{ fontSize:18, color:"#C7C7CC", marginRight:14, padding:"0 6px", touchAction:"none" }}>⠿</span>
-                    <button onClick={()=>onUpdateTypes(types.filter(x=>x!==t))} style={{ background:"none", border:"none", color:"#FF3B30", fontSize:13, cursor:"pointer", padding:0 }}>刪除</button>
+                    <button onClick={()=>onUpdateTypes(types.filter((x:string)=>x!==t))} style={{ background:"none", border:"none", color:"#FF3B30", fontSize:13, cursor:"pointer", padding:0 }}>刪除</button>
                   </div>
                 );
               })}
@@ -825,9 +918,6 @@ function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCou
                 style={{ background:"#000", border:"none", borderRadius:10, padding:"6px 14px", color:"white", fontSize:13, fontWeight:600, cursor:"pointer" }}>新增</button>
             </div>
           </>
-        )}
-        {tab==="geo" && (
-          <GeoEditor countries={countries} geoData={GEO} onUpdateGeo={onUpdateGeo} />
         )}
       </div>
     </div>
@@ -911,7 +1001,7 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
                 <div style={{ padding:"8px 10px 10px" }}>
                   <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
                   <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
-                  <div style={{ fontSize:10, color:"#C7C7CC", marginTop:2 }}>{STATUS_CFG[p.status as keyof typeof STATUS_CFG]?.mark} {STATUS_CFG[p.status as keyof typeof STATUS_CFG]?.label}</div>
+                  {p.note && <div style={{ fontSize:10, color:"#C7C7CC", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
                 </div>
               </button>
             ))}
@@ -1034,7 +1124,7 @@ function CountryPage({ country, places, onBack, onSelect }) {
                       <div style={{ padding:"8px 10px 10px" }}>
                         <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
                         <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
-                        <div style={{ fontSize:10, color:"#C7C7CC", marginTop:2 }}>{STATUS_CFG[p.status as keyof typeof STATUS_CFG]?.mark} {STATUS_CFG[p.status as keyof typeof STATUS_CFG]?.label}</div>
+                        {p.note && <div style={{ fontSize:10, color:"#C7C7CC", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
                       </div>
                     </button>
                   ))}
@@ -1051,81 +1141,634 @@ function CountryPage({ country, places, onBack, onSelect }) {
 // ── Add ───────────────────────────────────────────────────────────────────────
 // ── Address Parser ────────────────────────────────────────────────────────────
 // Simplified→Traditional Chinese mapping for common address terms
-// 韓文地址對應表 — 關鍵字對應商圈
-const KR_KEYWORD_MAP: Array<{key:string, city:string, district:string, neighborhood:string}> = [
-  // 麻浦區
-  {key:"홍대",      city:"首爾", district:"麻浦區", neighborhood:"弘大"},
-  {key:"홍익",      city:"首爾", district:"麻浦區", neighborhood:"弘大"},
-  {key:"연남",      city:"首爾", district:"麻浦區", neighborhood:"延南"},
-  {key:"망원",      city:"首爾", district:"麻浦區", neighborhood:"望遠"},
-  {key:"합정",      city:"首爾", district:"麻浦區", neighborhood:"合井"},
-  {key:"상수",      city:"首爾", district:"麻浦區", neighborhood:"上水"},
-  {key:"마포구",    city:"首爾", district:"麻浦區", neighborhood:""},
-  // 龍山區
-  {key:"이태원",    city:"首爾", district:"龍山區", neighborhood:"梨泰院"},
-  {key:"한남",      city:"首爾", district:"龍山區", neighborhood:"漢南"},
-  {key:"해방촌",    city:"首爾", district:"龍山區", neighborhood:"解放村"},
-  {key:"용산구",    city:"首爾", district:"龍山區", neighborhood:""},
-  // 城東區
-  {key:"성수",      city:"首爾", district:"城東區", neighborhood:"聖水"},
-  {key:"뚝섬",      city:"首爾", district:"城東區", neighborhood:"纛島"},
-  {key:"왕십리",    city:"首爾", district:"城東區", neighborhood:"往十里"},
-  {key:"성동구",    city:"首爾", district:"城東區", neighborhood:""},
-  // 江南區
-  {key:"압구정",    city:"首爾", district:"江南區", neighborhood:"狎鷗亭"},
-  {key:"청담",      city:"首爾", district:"江南區", neighborhood:"清潭"},
-  {key:"신사",      city:"首爾", district:"江南區", neighborhood:"新沙"},
-  {key:"가로수길",  city:"首爾", district:"江南區", neighborhood:"林蔭道"},
-  {key:"삼성",      city:"首爾", district:"江南區", neighborhood:"三成"},
-  {key:"강남구",    city:"首爾", district:"江南區", neighborhood:""},
-  // 鐘路區
-  {key:"인사동",    city:"首爾", district:"鐘路區", neighborhood:"仁寺洞"},
-  {key:"익선동",    city:"首爾", district:"鐘路區", neighborhood:"益善洞"},
-  {key:"삼청",      city:"首爾", district:"鐘路區", neighborhood:"三清洞"},
-  {key:"북촌",      city:"首爾", district:"鐘路區", neighborhood:"北村"},
-  {key:"종로구",    city:"首爾", district:"鐘路區", neighborhood:""},
-  // 中區
-  {key:"명동",      city:"首爾", district:"中區",   neighborhood:"明洞"},
-  {key:"을지로",    city:"首爾", district:"中區",   neighborhood:"乙支路"},
-  {key:"남대문",    city:"首爾", district:"中區",   neighborhood:"南大門"},
-  {key:"중구",      city:"首爾", district:"中區",   neighborhood:""},
-  // 廣津區
-  {key:"건대",      city:"首爾", district:"廣津區", neighborhood:"建大"},
-  {key:"자양",      city:"首爾", district:"廣津區", neighborhood:"紫陽洞"},
-  {key:"광진구",    city:"首爾", district:"廣津區", neighborhood:""},
-  // 松坡區
-  {key:"잠실",      city:"首爾", district:"松坡區", neighborhood:"蠶室"},
-  {key:"석촌",      city:"首爾", district:"松坡區", neighborhood:"石村湖"},
-  {key:"송파구",    city:"首爾", district:"松坡區", neighborhood:""},
-  // 瑞草區
-  {key:"교대",      city:"首爾", district:"瑞草區", neighborhood:"教大"},
-  {key:"서초구",    city:"首爾", district:"瑞草區", neighborhood:""},
-  // 東大門區
-  {key:"동대문",    city:"首爾", district:"東大門區", neighborhood:"東大門"},
-  {key:"광장시장",  city:"首爾", district:"東大門區", neighborhood:"廣藏市場"},
+// ── 多國地址關鍵字對應表 ─────────────────────────────────────────────────────
+const ADDRESS_MAP: Array<{key:string, country:string, city:string, district:string, neighborhood:string}> = [
+
+  // ── 韓國 ──────────────────────────────────────────────────────────────────
+  // 首爾 麻浦區
+  {key:"홍대",      country:"韓國", city:"首爾", district:"麻浦區", neighborhood:"弘大"},
+  {key:"홍익",      country:"韓國", city:"首爾", district:"麻浦區", neighborhood:"弘大"},
+  {key:"연남",      country:"韓國", city:"首爾", district:"麻浦區", neighborhood:"延南"},
+  {key:"망원",      country:"韓國", city:"首爾", district:"麻浦區", neighborhood:"望遠"},
+  {key:"합정",      country:"韓國", city:"首爾", district:"麻浦區", neighborhood:"合井"},
+  {key:"상수",      country:"韓國", city:"首爾", district:"麻浦區", neighborhood:"上水"},
+  {key:"마포구",    country:"韓國", city:"首爾", district:"麻浦區", neighborhood:""},
+  // 首爾 龍山區
+  {key:"이태원",    country:"韓國", city:"首爾", district:"龍山區", neighborhood:"梨泰院"},
+  {key:"한남",      country:"韓國", city:"首爾", district:"龍山區", neighborhood:"漢南"},
+  {key:"해방촌",    country:"韓國", city:"首爾", district:"龍山區", neighborhood:"解放村"},
+  {key:"용산구",    country:"韓國", city:"首爾", district:"龍山區", neighborhood:""},
+  // 首爾 城東區
+  {key:"성수",      country:"韓國", city:"首爾", district:"城東區", neighborhood:"聖水"},
+  {key:"뚝섬",      country:"韓國", city:"首爾", district:"城東區", neighborhood:"纛島"},
+  {key:"왕십리",    country:"韓國", city:"首爾", district:"城東區", neighborhood:"往十里"},
+  {key:"성동구",    country:"韓國", city:"首爾", district:"城東區", neighborhood:""},
+  // 首爾 江南區
+  {key:"압구정",    country:"韓國", city:"首爾", district:"江南區", neighborhood:"狎鷗亭"},
+  {key:"청담",      country:"韓國", city:"首爾", district:"江南區", neighborhood:"清潭"},
+  {key:"신사",      country:"韓國", city:"首爾", district:"江南區", neighborhood:"新沙"},
+  {key:"가로수길",  country:"韓國", city:"首爾", district:"江南區", neighborhood:"林蔭道"},
+  {key:"삼성동",    country:"韓國", city:"首爾", district:"江南區", neighborhood:"三成"},
+  {key:"강남구",    country:"韓國", city:"首爾", district:"江南區", neighborhood:""},
+  // 首爾 鐘路區
+  {key:"인사동",    country:"韓國", city:"首爾", district:"鐘路區", neighborhood:"仁寺洞"},
+  {key:"익선동",    country:"韓國", city:"首爾", district:"鐘路區", neighborhood:"益善洞"},
+  {key:"삼청",      country:"韓國", city:"首爾", district:"鐘路區", neighborhood:"三清洞"},
+  {key:"북촌",      country:"韓國", city:"首爾", district:"鐘路區", neighborhood:"北村"},
+  {key:"종로구",    country:"韓國", city:"首爾", district:"鐘路區", neighborhood:""},
+  // 首爾 中區
+  {key:"명동",      country:"韓國", city:"首爾", district:"中區",   neighborhood:"明洞"},
+  {key:"을지로",    country:"韓國", city:"首爾", district:"中區",   neighborhood:"乙支路"},
+  {key:"남대문",    country:"韓國", city:"首爾", district:"中區",   neighborhood:"南大門"},
+  // 首爾 廣津區
+  {key:"건대",      country:"韓國", city:"首爾", district:"廣津區", neighborhood:"建大"},
+  {key:"자양",      country:"韓國", city:"首爾", district:"廣津區", neighborhood:"紫陽洞"},
+  // 首爾 松坡區
+  {key:"잠실",      country:"韓國", city:"首爾", district:"松坡區", neighborhood:"蠶室"},
+  {key:"석촌",      country:"韓國", city:"首爾", district:"松坡區", neighborhood:"石村湖"},
+  // 首爾 瑞草區
+  {key:"교대",      country:"韓國", city:"首爾", district:"瑞草區", neighborhood:"教大"},
+  // 首爾 東大門區
+  {key:"동대문",    country:"韓國", city:"首爾", district:"東大門區", neighborhood:"東大門"},
+  {key:"광장시장",  country:"韓國", city:"首爾", district:"東大門區", neighborhood:"廣藏市場"},
   // 釜山
-  {key:"해운대",    city:"釜山", district:"海雲台區", neighborhood:"海雲台"},
-  {key:"광안리",    city:"釜山", district:"海雲台區", neighborhood:"廣安里"},
-  {key:"서면",      city:"釜山", district:"釜山鎮區", neighborhood:"西面"},
-  {key:"남포",      city:"釜山", district:"中區",     neighborhood:"南浦洞"},
+  {key:"해운대",    country:"韓國", city:"釜山", district:"海雲台區", neighborhood:"海雲台"},
+  {key:"광안리",    country:"韓國", city:"釜山", district:"海雲台區", neighborhood:"廣安里"},
+  {key:"서면",      country:"韓國", city:"釜山", district:"釜山鎮區", neighborhood:"西面"},
+  {key:"남포동",    country:"韓國", city:"釜山", district:"中區",     neighborhood:"南浦洞"},
+  // 首爾城市關鍵字
+  {key:"서울",      country:"韓國", city:"首爾", district:"", neighborhood:""},
+  {key:"seoul",     country:"韓國", city:"首爾", district:"", neighborhood:""},
+  {key:"부산",      country:"韓國", city:"釜山", district:"", neighborhood:""},
+  {key:"busan",     country:"韓國", city:"釜山", district:"", neighborhood:""},
+  {key:"제주",      country:"韓國", city:"濟州", district:"", neighborhood:""},
+
+  // ── 日本 ──────────────────────────────────────────────────────────────────
+  // 東京 涉谷區
+  {key:"渋谷",      country:"日本", city:"東京", district:"涉谷區", neighborhood:"涉谷"},
+  {key:"shibuya",   country:"日本", city:"東京", district:"涉谷區", neighborhood:"涉谷"},
+  {key:"原宿",      country:"日本", city:"東京", district:"涉谷區", neighborhood:"原宿"},
+  {key:"harajuku",  country:"日本", city:"東京", district:"涉谷區", neighborhood:"原宿"},
+  {key:"表参道",    country:"日本", city:"東京", district:"涉谷區", neighborhood:"表參道"},
+  {key:"omotesando",country:"日本", city:"東京", district:"涉谷區", neighborhood:"表參道"},
+  {key:"代官山",    country:"日本", city:"東京", district:"涉谷區", neighborhood:"代官山"},
+  {key:"daikanyama",country:"日本", city:"東京", district:"涉谷區", neighborhood:"代官山"},
+  {key:"中目黒",    country:"日本", city:"東京", district:"涉谷區", neighborhood:"中目黒"},
+  {key:"nakameguro",country:"日本", city:"東京", district:"涉谷區", neighborhood:"中目黒"},
+  {key:"恵比寿",    country:"日本", city:"東京", district:"涉谷區", neighborhood:"惠比壽"},
+  {key:"ebisu",     country:"日本", city:"東京", district:"涉谷區", neighborhood:"惠比壽"},
+  // 東京 新宿區
+  {key:"新宿",      country:"日本", city:"東京", district:"新宿區", neighborhood:"新宿"},
+  {key:"shinjuku",  country:"日本", city:"東京", district:"新宿區", neighborhood:"新宿"},
+  {key:"下北沢",    country:"日本", city:"東京", district:"新宿區", neighborhood:"下北澤"},
+  {key:"shimokitazawa",country:"日本",city:"東京",district:"新宿區",neighborhood:"下北澤"},
+  // 東京 中央區
+  {key:"銀座",      country:"日本", city:"東京", district:"中央區", neighborhood:"銀座"},
+  {key:"ginza",     country:"日本", city:"東京", district:"中央區", neighborhood:"銀座"},
+  {key:"築地",      country:"日本", city:"東京", district:"中央區", neighborhood:"築地"},
+  {key:"tsukiji",   country:"日本", city:"東京", district:"中央區", neighborhood:"築地"},
+  {key:"日本橋",    country:"日本", city:"東京", district:"中央區", neighborhood:"日本橋"},
+  // 東京 台東區
+  {key:"浅草",      country:"日本", city:"東京", district:"台東區", neighborhood:"淺草"},
+  {key:"asakusa",   country:"日本", city:"東京", district:"台東區", neighborhood:"淺草"},
+  {key:"上野",      country:"日本", city:"東京", district:"台東區", neighborhood:"上野"},
+  {key:"ueno",      country:"日本", city:"東京", district:"台東區", neighborhood:"上野"},
+  {key:"蔵前",      country:"日本", city:"東京", district:"台東區", neighborhood:"藏前"},
+  // 東京 千代田區
+  {key:"秋葉原",    country:"日本", city:"東京", district:"千代田區", neighborhood:"秋葉原"},
+  {key:"akihabara", country:"日本", city:"東京", district:"千代田區", neighborhood:"秋葉原"},
+  {key:"神保町",    country:"日本", city:"東京", district:"千代田區", neighborhood:"神保町"},
+  // 東京 豐島區
+  {key:"池袋",      country:"日本", city:"東京", district:"豐島區", neighborhood:"池袋"},
+  {key:"ikebukuro", country:"日本", city:"東京", district:"豐島區", neighborhood:"池袋"},
+  // 東京 港區
+  {key:"六本木",    country:"日本", city:"東京", district:"港區", neighborhood:"六本木"},
+  {key:"roppongi",  country:"日本", city:"東京", district:"港區", neighborhood:"六本木"},
+  {key:"麻布台",    country:"日本", city:"東京", district:"港區", neighborhood:"麻布十番"},
+  {key:"麻布十番",  country:"日本", city:"東京", district:"港區", neighborhood:"麻布十番"},
+  {key:"azabu",     country:"日本", city:"東京", district:"港區", neighborhood:"麻布十番"},
+  {key:"赤坂",      country:"日本", city:"東京", district:"港區", neighborhood:"赤坂"},
+  {key:"台場",      country:"日本", city:"東京", district:"港區", neighborhood:"台場"},
+  {key:"odaiba",    country:"日本", city:"東京", district:"港區", neighborhood:"台場"},
+  // 東京 世田谷區
+  {key:"三軒茶屋",  country:"日本", city:"東京", district:"世田谷區", neighborhood:"三軒茶屋"},
+  {key:"自由が丘",  country:"日本", city:"東京", district:"世田谷區", neighborhood:"自由之丘"},
+  {key:"jiyugaoka", country:"日本", city:"東京", district:"世田谷區", neighborhood:"自由之丘"},
+  // 東京 杉並區
+  {key:"吉祥寺",    country:"日本", city:"東京", district:"杉並區", neighborhood:"吉祥寺"},
+  {key:"kichijoji", country:"日本", city:"東京", district:"杉並區", neighborhood:"吉祥寺"},
+  // 東京城市
+  {key:"東京都",    country:"日本", city:"東京", district:"", neighborhood:""},
+  {key:"tokyo",     country:"日本", city:"東京", district:"", neighborhood:""},
+  // 大阪
+  {key:"道頓堀",    country:"日本", city:"大阪", district:"中央區", neighborhood:"道頓堀"},
+  {key:"dotonbori", country:"日本", city:"大阪", district:"中央區", neighborhood:"道頓堀"},
+  {key:"心斎橋",    country:"日本", city:"大阪", district:"中央區", neighborhood:"心齋橋"},
+  {key:"shinsaibashi",country:"日本",city:"大阪",district:"中央區",neighborhood:"心齋橋"},
+  {key:"難波",      country:"日本", city:"大阪", district:"中央區", neighborhood:"難波"},
+  {key:"namba",     country:"日本", city:"大阪", district:"中央區", neighborhood:"難波"},
+  {key:"なんば",    country:"日本", city:"大阪", district:"中央區", neighborhood:"難波"},
+  {key:"梅田",      country:"日本", city:"大阪", district:"北區",   neighborhood:"梅田"},
+  {key:"umeda",     country:"日本", city:"大阪", district:"北區",   neighborhood:"梅田"},
+  {key:"中崎町",    country:"日本", city:"大阪", district:"北區",   neighborhood:"中崎町"},
+  {key:"新世界",    country:"日本", city:"大阪", district:"浪速區", neighborhood:"新世界"},
+  {key:"大阪",      country:"日本", city:"大阪", district:"", neighborhood:""},
+  {key:"osaka",     country:"日本", city:"大阪", district:"", neighborhood:""},
+  // 京都
+  {key:"祇園",      country:"日本", city:"京都", district:"東山區", neighborhood:"祇園"},
+  {key:"gion",      country:"日本", city:"京都", district:"東山區", neighborhood:"祇園"},
+  {key:"清水",      country:"日本", city:"京都", district:"東山區", neighborhood:"清水"},
+  {key:"kiyomizu",  country:"日本", city:"京都", district:"東山區", neighborhood:"清水"},
+  {key:"河原町",    country:"日本", city:"京都", district:"中京區", neighborhood:"河原町"},
+  {key:"kawaramachi",country:"日本",city:"京都",district:"中京區",neighborhood:"河原町"},
+  {key:"錦市場",    country:"日本", city:"京都", district:"中京區", neighborhood:"錦市場"},
+  {key:"嵐山",      country:"日本", city:"京都", district:"右京區", neighborhood:"嵐山"},
+  {key:"arashiyama",country:"日本", city:"京都", district:"右京區", neighborhood:"嵐山"},
+  {key:"伏見稲荷",  country:"日本", city:"京都", district:"伏見區", neighborhood:"伏見稻荷"},
+  {key:"京都",      country:"日本", city:"京都", district:"", neighborhood:""},
+  {key:"kyoto",     country:"日本", city:"京都", district:"", neighborhood:""},
+  // 福岡
+  {key:"天神",      country:"日本", city:"福岡", district:"中央區", neighborhood:"天神"},
+  {key:"tenjin",    country:"日本", city:"福岡", district:"中央區", neighborhood:"天神"},
+  {key:"大名",      country:"日本", city:"福岡", district:"中央區", neighborhood:"大名"},
+  {key:"薬院",      country:"日本", city:"福岡", district:"中央區", neighborhood:"藥院"},
+  {key:"博多",      country:"日本", city:"福岡", district:"博多區", neighborhood:"博多"},
+  {key:"hakata",    country:"日本", city:"福岡", district:"博多區", neighborhood:"博多"},
+  {key:"中洲",      country:"日本", city:"福岡", district:"博多區", neighborhood:"中洲"},
+  {key:"福岡",      country:"日本", city:"福岡", district:"", neighborhood:""},
+  {key:"fukuoka",   country:"日本", city:"福岡", district:"", neighborhood:""},
+  // 北海道
+  {key:"大通",      country:"日本", city:"北海道", district:"札幌市", neighborhood:"大通"},
+  {key:"薄野",      country:"日本", city:"北海道", district:"札幌市", neighborhood:"薄野"},
+  {key:"すすきの",  country:"日本", city:"北海道", district:"札幌市", neighborhood:"薄野"},
+  {key:"susukino",  country:"日本", city:"北海道", district:"札幌市", neighborhood:"薄野"},
+  {key:"円山",      country:"日本", city:"北海道", district:"札幌市", neighborhood:"円山"},
+  {key:"小樽",      country:"日本", city:"北海道", district:"小樽市", neighborhood:"小樽運河"},
+  {key:"otaru",     country:"日本", city:"北海道", district:"小樽市", neighborhood:"小樽運河"},
+  {key:"函館",      country:"日本", city:"北海道", district:"函館市", neighborhood:"元町"},
+  {key:"hakodate",  country:"日本", city:"北海道", district:"函館市", neighborhood:"元町"},
+  {key:"札幌",      country:"日本", city:"北海道", district:"", neighborhood:""},
+  {key:"sapporo",   country:"日本", city:"北海道", district:"", neighborhood:""},
+  {key:"北海道",    country:"日本", city:"北海道", district:"", neighborhood:""},
+  {key:"hokkaido",  country:"日本", city:"北海道", district:"", neighborhood:""},
+  // 沖繩
+  {key:"国際通り",  country:"日本", city:"沖繩", district:"那霸市", neighborhood:"國際通"},
+  {key:"kokusaidori",country:"日本",city:"沖繩",district:"那霸市",neighborhood:"國際通"},
+  {key:"牧志",      country:"日本", city:"沖繩", district:"那霸市", neighborhood:"牧志"},
+  {key:"首里",      country:"日本", city:"沖繩", district:"那霸市", neighborhood:"首里"},
+  {key:"那覇",      country:"日本", city:"沖繩", district:"那霸市", neighborhood:""},
+  {key:"naha",      country:"日本", city:"沖繩", district:"那霸市", neighborhood:""},
+  {key:"沖縄",      country:"日本", city:"沖繩", district:"", neighborhood:""},
+  {key:"okinawa",   country:"日本", city:"沖繩", district:"", neighborhood:""},
+  // 奈良
+  {key:"奈良公園",  country:"日本", city:"奈良", district:"奈良市", neighborhood:"奈良公園"},
+  {key:"東大寺",    country:"日本", city:"奈良", district:"奈良市", neighborhood:"東大寺周邊"},
+  {key:"奈良市",    country:"日本", city:"奈良", district:"", neighborhood:""},
+  {key:"nara",      country:"日本", city:"奈良", district:"", neighborhood:""},
+  // 神戶
+  {key:"三宮",      country:"日本", city:"神戶", district:"中央區", neighborhood:"三宮"},
+  {key:"sannomiya",country:"日本", city:"神戶", district:"中央區", neighborhood:"三宮"},
+  {key:"北野",      country:"日本", city:"神戶", district:"中央區", neighborhood:"北野"},
+  {key:"南京町",    country:"日本", city:"神戶", district:"中央區", neighborhood:"南京町"},
+  {key:"神戸",      country:"日本", city:"神戶", district:"", neighborhood:""},
+  {key:"kobe",      country:"日本", city:"神戶", district:"", neighborhood:""},
+
+  // ── 台灣 ──────────────────────────────────────────────────────────────────
+  // 台北市
+  {key:"信義區",    country:"台灣", city:"台北", district:"信義區", neighborhood:"信義"},
+  {key:"象山",      country:"台灣", city:"台北", district:"信義區", neighborhood:"象山"},
+  {key:"市政府",    country:"台灣", city:"台北", district:"信義區", neighborhood:"市政府"},
+  {key:"微風廣場",  country:"台灣", city:"台北", district:"信義區", neighborhood:"微風廣場"},
+  {key:"東區",      country:"台灣", city:"台北", district:"大安區", neighborhood:"東區"},
+  {key:"永康街",    country:"台灣", city:"台北", district:"大安區", neighborhood:"永康街"},
+  {key:"師大",      country:"台灣", city:"台北", district:"大安區", neighborhood:"師大"},
+  {key:"公館",      country:"台灣", city:"台北", district:"大安區", neighborhood:"公館"},
+  {key:"敦化",      country:"台灣", city:"台北", district:"大安區", neighborhood:"敦化"},
+  {key:"大安區",    country:"台灣", city:"台北", district:"大安區", neighborhood:""},
+  {key:"赤峰街",    country:"台灣", city:"台北", district:"中山區", neighborhood:"赤峰街"},
+  {key:"行天宮",    country:"台灣", city:"台北", district:"中山區", neighborhood:"行天宮"},
+  {key:"林森",      country:"台灣", city:"台北", district:"中山區", neighborhood:"林森"},
+  {key:"中山區",    country:"台灣", city:"台北", district:"中山區", neighborhood:""},
+  {key:"西門",      country:"台灣", city:"台北", district:"萬華區", neighborhood:"西門"},
+  {key:"龍山寺",    country:"台灣", city:"台北", district:"萬華區", neighborhood:"龍山寺"},
+  {key:"剝皮寮",    country:"台灣", city:"台北", district:"萬華區", neighborhood:"剝皮寮"},
+  {key:"萬華區",    country:"台灣", city:"台北", district:"萬華區", neighborhood:""},
+  {key:"饒河",      country:"台灣", city:"台北", district:"松山區", neighborhood:"饒河"},
+  {key:"五分埔",    country:"台灣", city:"台北", district:"松山區", neighborhood:"五分埔"},
+  {key:"松山區",    country:"台灣", city:"台北", district:"松山區", neighborhood:""},
+  {key:"士林夜市",  country:"台灣", city:"台北", district:"士林區", neighborhood:"士林夜市"},
+  {key:"天母",      country:"台灣", city:"台北", district:"士林區", neighborhood:"天母"},
+  {key:"陽明山",    country:"台灣", city:"台北", district:"士林區", neighborhood:"陽明山"},
+  {key:"士林區",    country:"台灣", city:"台北", district:"士林區", neighborhood:""},
+  {key:"新北投",    country:"台灣", city:"台北", district:"北投區", neighborhood:"新北投溫泉"},
+  {key:"北投區",    country:"台灣", city:"台北", district:"北投區", neighborhood:""},
+  {key:"內湖",      country:"台灣", city:"台北", district:"內湖區", neighborhood:"內湖"},
+  {key:"大湖",      country:"台灣", city:"台北", district:"內湖區", neighborhood:"大湖"},
+  {key:"內湖區",    country:"台灣", city:"台北", district:"內湖區", neighborhood:""},
+  {key:"南港區",    country:"台灣", city:"台北", district:"南港區", neighborhood:""},
+  {key:"文山區",    country:"台灣", city:"台北", district:"文山區", neighborhood:""},
+  {key:"木柵",      country:"台灣", city:"台北", district:"文山區", neighborhood:"木柵"},
+  {key:"政大",      country:"台灣", city:"台北", district:"文山區", neighborhood:"政大"},
+  {key:"大同區",    country:"台灣", city:"台北", district:"大同區", neighborhood:""},
+  {key:"迪化街",    country:"台灣", city:"台北", district:"大同區", neighborhood:"迪化街"},
+  {key:"中正區",    country:"台灣", city:"台北", district:"中正區", neighborhood:""},
+  {key:"台北車站",  country:"台灣", city:"台北", district:"中正區", neighborhood:"台北車站"},
+  {key:"台大",      country:"台灣", city:"台北", district:"中正區", neighborhood:"台大"},
+  {key:"台北市",    country:"台灣", city:"台北", district:"", neighborhood:""},
+  {key:"臺北市",    country:"台灣", city:"台北", district:"", neighborhood:""},
+  {key:"taipei",    country:"台灣", city:"台北", district:"", neighborhood:""},
+  // 新北市
+  {key:"淡水",      country:"台灣", city:"新北", district:"淡水區", neighborhood:"淡水"},
+  {key:"板橋",      country:"台灣", city:"新北", district:"板橋區", neighborhood:"板橋"},
+  {key:"新店",      country:"台灣", city:"新北", district:"新店區", neighborhood:"新店"},
+  {key:"碧潭",      country:"台灣", city:"新北", district:"新店區", neighborhood:"碧潭"},
+  {key:"三重",      country:"台灣", city:"新北", district:"三重區", neighborhood:""},
+  {key:"中和",      country:"台灣", city:"新北", district:"中和區", neighborhood:""},
+  {key:"永和",      country:"台灣", city:"新北", district:"永和區", neighborhood:""},
+  {key:"新莊",      country:"台灣", city:"新北", district:"新莊區", neighborhood:""},
+  {key:"土城",      country:"台灣", city:"新北", district:"土城區", neighborhood:""},
+  {key:"樹林",      country:"台灣", city:"新北", district:"樹林區", neighborhood:""},
+  {key:"鶯歌",      country:"台灣", city:"新北", district:"鶯歌區", neighborhood:"鶯歌老街"},
+  {key:"三峽",      country:"台灣", city:"新北", district:"三峽區", neighborhood:"三峽老街"},
+  {key:"瑞芳",      country:"台灣", city:"新北", district:"瑞芳區", neighborhood:""},
+  {key:"九份",      country:"台灣", city:"新北", district:"瑞芳區", neighborhood:"九份"},
+  {key:"金瓜石",    country:"台灣", city:"新北", district:"瑞芳區", neighborhood:"金瓜石"},
+  {key:"汐止",      country:"台灣", city:"新北", district:"汐止區", neighborhood:""},
+  {key:"深坑",      country:"台灣", city:"新北", district:"深坑區", neighborhood:"深坑老街"},
+  {key:"石碇",      country:"台灣", city:"新北", district:"石碇區", neighborhood:""},
+  {key:"坪林",      country:"台灣", city:"新北", district:"坪林區", neighborhood:""},
+  {key:"烏來",      country:"台灣", city:"新北", district:"烏來區", neighborhood:"烏來老街"},
+  {key:"平溪",      country:"台灣", city:"新北", district:"平溪區", neighborhood:"平溪老街"},
+  {key:"十分",      country:"台灣", city:"新北", district:"平溪區", neighborhood:"十分"},
+  {key:"林口",      country:"台灣", city:"新北", district:"林口區", neighborhood:""},
+  {key:"泰山",      country:"台灣", city:"新北", district:"泰山區", neighborhood:""},
+  {key:"五股",      country:"台灣", city:"新北", district:"五股區", neighborhood:""},
+  {key:"蘆洲",      country:"台灣", city:"新北", district:"蘆洲區", neighborhood:""},
+  {key:"八里",      country:"台灣", city:"新北", district:"八里區", neighborhood:""},
+  {key:"金山",      country:"台灣", city:"新北", district:"金山區", neighborhood:""},
+  {key:"萬里",      country:"台灣", city:"新北", district:"萬里區", neighborhood:""},
+  {key:"新北市",    country:"台灣", city:"新北", district:"", neighborhood:""},
+  {key:"新北",      country:"台灣", city:"新北", district:"", neighborhood:""},
+  // 桃園市
+  {key:"桃園區",    country:"台灣", city:"桃園", district:"桃園區", neighborhood:""},
+  {key:"中壢",      country:"台灣", city:"桃園", district:"中壢區", neighborhood:""},
+  {key:"平鎮",      country:"台灣", city:"桃園", district:"平鎮區", neighborhood:""},
+  {key:"八德",      country:"台灣", city:"桃園", district:"八德區", neighborhood:""},
+  {key:"大溪",      country:"台灣", city:"桃園", district:"大溪區", neighborhood:"大溪老街"},
+  {key:"龍潭",      country:"台灣", city:"桃園", district:"龍潭區", neighborhood:""},
+  {key:"楊梅",      country:"台灣", city:"桃園", district:"楊梅區", neighborhood:""},
+  {key:"蘆竹",      country:"台灣", city:"桃園", district:"蘆竹區", neighborhood:""},
+  {key:"大園",      country:"台灣", city:"桃園", district:"大園區", neighborhood:""},
+  {key:"觀音",      country:"台灣", city:"桃園", district:"觀音區", neighborhood:""},
+  {key:"新屋",      country:"台灣", city:"桃園", district:"新屋區", neighborhood:""},
+  {key:"龜山",      country:"台灣", city:"桃園", district:"龜山區", neighborhood:""},
+  {key:"復興",      country:"台灣", city:"桃園", district:"復興區", neighborhood:""},
+  {key:"桃園市",    country:"台灣", city:"桃園", district:"", neighborhood:""},
+  {key:"taoyuan",   country:"台灣", city:"桃園", district:"", neighborhood:""},
+  // 台中市
+  {key:"審計新村",  country:"台灣", city:"台中", district:"西區",   neighborhood:"審計新村"},
+  {key:"草悟道",    country:"台灣", city:"台中", district:"西區",   neighborhood:"草悟道"},
+  {key:"勤美",      country:"台灣", city:"台中", district:"西區",   neighborhood:"勤美"},
+  {key:"一中街",    country:"台灣", city:"台中", district:"北區",   neighborhood:"一中街"},
+  {key:"逢甲",      country:"台灣", city:"台中", district:"西屯區", neighborhood:"逢甲"},
+  {key:"七期",      country:"台灣", city:"台中", district:"西屯區", neighborhood:"七期"},
+  {key:"大遠百",    country:"台灣", city:"台中", district:"西屯區", neighborhood:"大遠百"},
+  {key:"豐原",      country:"台灣", city:"台中", district:"豐原區", neighborhood:""},
+  {key:"大甲",      country:"台灣", city:"台中", district:"大甲區", neighborhood:""},
+  {key:"清水",      country:"台灣", city:"台中", district:"清水區", neighborhood:""},
+  {key:"沙鹿",      country:"台灣", city:"台中", district:"沙鹿區", neighborhood:""},
+  {key:"梧棲",      country:"台灣", city:"台中", district:"梧棲區", neighborhood:""},
+  {key:"大里",      country:"台灣", city:"台中", district:"大里區", neighborhood:""},
+  {key:"霧峰",      country:"台灣", city:"台中", district:"霧峰區", neighborhood:""},
+  {key:"烏日",      country:"台灣", city:"台中", district:"烏日區", neighborhood:""},
+  {key:"東勢",      country:"台灣", city:"台中", district:"東勢區", neighborhood:""},
+  {key:"和平",      country:"台灣", city:"台中", district:"和平區", neighborhood:""},
+  {key:"台中市",    country:"台灣", city:"台中", district:"", neighborhood:""},
+  {key:"臺中市",    country:"台灣", city:"台中", district:"", neighborhood:""},
+  {key:"taichung",  country:"台灣", city:"台中", district:"", neighborhood:""},
+  // 台南市
+  {key:"赤崁樓",    country:"台灣", city:"台南", district:"中西區", neighborhood:"赤崁樓"},
+  {key:"神農街",    country:"台灣", city:"台南", district:"中西區", neighborhood:"神農街"},
+  {key:"正興街",    country:"台灣", city:"台南", district:"中西區", neighborhood:"正興街"},
+  {key:"海安路",    country:"台灣", city:"台南", district:"中西區", neighborhood:"海安路"},
+  {key:"大東夜市",  country:"台灣", city:"台南", district:"東區",   neighborhood:"大東夜市"},
+  {key:"安平",      country:"台灣", city:"台南", district:"安平區", neighborhood:"安平"},
+  {key:"漁光島",    country:"台灣", city:"台南", district:"安平區", neighborhood:"漁光島"},
+  {key:"花園夜市",  country:"台灣", city:"台南", district:"北區",   neighborhood:"花園夜市"},
+  {key:"永康區",    country:"台灣", city:"台南", district:"永康區", neighborhood:""},
+  {key:"歸仁",      country:"台灣", city:"台南", district:"歸仁區", neighborhood:""},
+  {key:"新化",      country:"台灣", city:"台南", district:"新化區", neighborhood:"新化老街"},
+  {key:"麻豆",      country:"台灣", city:"台南", district:"麻豆區", neighborhood:""},
+  {key:"佳里",      country:"台灣", city:"台南", district:"佳里區", neighborhood:""},
+  {key:"七股",      country:"台灣", city:"台南", district:"七股區", neighborhood:""},
+  {key:"將軍",      country:"台灣", city:"台南", district:"將軍區", neighborhood:""},
+  {key:"台南市",    country:"台灣", city:"台南", district:"", neighborhood:""},
+  {key:"臺南市",    country:"台灣", city:"台南", district:"", neighborhood:""},
+  {key:"tainan",    country:"台灣", city:"台南", district:"", neighborhood:""},
+  // 高雄市
+  {key:"鹽埕",      country:"台灣", city:"高雄", district:"鹽埕區", neighborhood:"鹽埕"},
+  {key:"駁二",      country:"台灣", city:"高雄", district:"鹽埕區", neighborhood:"駁二"},
+  {key:"六合夜市",  country:"台灣", city:"高雄", district:"前金區", neighborhood:"六合夜市"},
+  {key:"瑞豐夜市",  country:"台灣", city:"高雄", district:"苓雅區", neighborhood:"瑞豐夜市"},
+  {key:"左營",      country:"台灣", city:"高雄", district:"左營區", neighborhood:"左營"},
+  {key:"蓮池潭",    country:"台灣", city:"高雄", district:"左營區", neighborhood:"蓮池潭"},
+  {key:"夢時代",    country:"台灣", city:"高雄", district:"前鎮區", neighborhood:"夢時代"},
+  {key:"高雄展覽館",country:"台灣", city:"高雄", district:"前鎮區", neighborhood:"高雄展覽館"},
+  {key:"鳳山",      country:"台灣", city:"高雄", district:"鳳山區", neighborhood:""},
+  {key:"三民區",    country:"台灣", city:"高雄", district:"三民區", neighborhood:""},
+  {key:"楠梓",      country:"台灣", city:"高雄", district:"楠梓區", neighborhood:""},
+  {key:"大社",      country:"台灣", city:"高雄", district:"大社區", neighborhood:""},
+  {key:"岡山",      country:"台灣", city:"高雄", district:"岡山區", neighborhood:""},
+  {key:"旗山",      country:"台灣", city:"高雄", district:"旗山區", neighborhood:"旗山老街"},
+  {key:"美濃",      country:"台灣", city:"高雄", district:"美濃區", neighborhood:""},
+  {key:"茂林",      country:"台灣", city:"高雄", district:"茂林區", neighborhood:""},
+  {key:"那瑪夏",    country:"台灣", city:"高雄", district:"那瑪夏區", neighborhood:""},
+  {key:"高雄市",    country:"台灣", city:"高雄", district:"", neighborhood:""},
+  {key:"kaohsiung", country:"台灣", city:"高雄", district:"", neighborhood:""},
+  // 基隆市
+  {key:"仁愛區",    country:"台灣", city:"基隆", district:"仁愛區", neighborhood:""},
+  {key:"廟口夜市",  country:"台灣", city:"基隆", district:"仁愛區", neighborhood:"廟口夜市"},
+  {key:"正濱漁港",  country:"台灣", city:"基隆", district:"中正區", neighborhood:"正濱漁港"},
+  {key:"七堵",      country:"台灣", city:"基隆", district:"七堵區", neighborhood:""},
+  {key:"基隆市",    country:"台灣", city:"基隆", district:"", neighborhood:""},
+  {key:"keelung",   country:"台灣", city:"基隆", district:"", neighborhood:""},
+  // 新竹市
+  {key:"新竹市",    country:"台灣", city:"新竹市", district:"", neighborhood:""},
+  {key:"城隍廟",    country:"台灣", city:"新竹市", district:"東區", neighborhood:"城隍廟"},
+  {key:"香山",      country:"台灣", city:"新竹市", district:"香山區", neighborhood:""},
+  {key:"hsinchu",   country:"台灣", city:"新竹市", district:"", neighborhood:""},
+  // 嘉義市
+  {key:"嘉義市",    country:"台灣", city:"嘉義市", district:"", neighborhood:""},
+  {key:"文化路夜市",country:"台灣", city:"嘉義市", district:"東區", neighborhood:"文化路夜市"},
+  {key:"chiayi",    country:"台灣", city:"嘉義市", district:"", neighborhood:""},
+  // 新竹縣
+  {key:"竹北",      country:"台灣", city:"新竹縣", district:"竹北市", neighborhood:""},
+  {key:"竹東",      country:"台灣", city:"新竹縣", district:"竹東鎮", neighborhood:""},
+  {key:"關西",      country:"台灣", city:"新竹縣", district:"關西鎮", neighborhood:"關西老街"},
+  {key:"尖石",      country:"台灣", city:"新竹縣", district:"尖石鄉", neighborhood:""},
+  {key:"五峰",      country:"台灣", city:"新竹縣", district:"五峰鄉", neighborhood:""},
+  {key:"新竹縣",    country:"台灣", city:"新竹縣", district:"", neighborhood:""},
+  // 苗栗縣
+  {key:"苗栗市",    country:"台灣", city:"苗栗", district:"苗栗市", neighborhood:""},
+  {key:"頭份",      country:"台灣", city:"苗栗", district:"頭份市", neighborhood:""},
+  {key:"竹南",      country:"台灣", city:"苗栗", district:"竹南鎮", neighborhood:""},
+  {key:"後龍",      country:"台灣", city:"苗栗", district:"後龍鎮", neighborhood:""},
+  {key:"通霄",      country:"台灣", city:"苗栗", district:"通霄鎮", neighborhood:""},
+  {key:"南庄",      country:"台灣", city:"苗栗", district:"南庄鄉", neighborhood:"南庄老街"},
+  {key:"三義",      country:"台灣", city:"苗栗", district:"三義鄉", neighborhood:""},
+  {key:"苗栗縣",    country:"台灣", city:"苗栗", district:"", neighborhood:""},
+  {key:"miaoli",    country:"台灣", city:"苗栗", district:"", neighborhood:""},
+  // 彰化縣
+  {key:"彰化市",    country:"台灣", city:"彰化", district:"彰化市", neighborhood:""},
+  {key:"員林",      country:"台灣", city:"彰化", district:"員林市", neighborhood:""},
+  {key:"鹿港",      country:"台灣", city:"彰化", district:"鹿港鎮", neighborhood:"鹿港老街"},
+  {key:"溪湖",      country:"台灣", city:"彰化", district:"溪湖鎮", neighborhood:""},
+  {key:"二林",      country:"台灣", city:"彰化", district:"二林鎮", neighborhood:""},
+  {key:"北斗",      country:"台灣", city:"彰化", district:"北斗鎮", neighborhood:""},
+  {key:"彰化縣",    country:"台灣", city:"彰化", district:"", neighborhood:""},
+  {key:"changhua",  country:"台灣", city:"彰化", district:"", neighborhood:""},
+  // 南投縣
+  {key:"南投市",    country:"台灣", city:"南投", district:"南投市", neighborhood:""},
+  {key:"埔里",      country:"台灣", city:"南投", district:"埔里鎮", neighborhood:""},
+  {key:"日月潭",    country:"台灣", city:"南投", district:"魚池鄉", neighborhood:"日月潭"},
+  {key:"集集",      country:"台灣", city:"南投", district:"集集鎮", neighborhood:""},
+  {key:"竹山",      country:"台灣", city:"南投", district:"竹山鎮", neighborhood:""},
+  {key:"鹿谷",      country:"台灣", city:"南投", district:"鹿谷鄉", neighborhood:""},
+  {key:"草屯",      country:"台灣", city:"南投", district:"草屯鎮", neighborhood:""},
+  {key:"中寮",      country:"台灣", city:"南投", district:"中寮鄉", neighborhood:""},
+  {key:"仁愛鄉",    country:"台灣", city:"南投", district:"仁愛鄉", neighborhood:"清境"},
+  {key:"清境",      country:"台灣", city:"南投", district:"仁愛鄉", neighborhood:"清境農場"},
+  {key:"南投縣",    country:"台灣", city:"南投", district:"", neighborhood:""},
+  {key:"nantou",    country:"台灣", city:"南投", district:"", neighborhood:""},
+  // 雲林縣
+  {key:"斗六",      country:"台灣", city:"雲林", district:"斗六市", neighborhood:""},
+  {key:"斗南",      country:"台灣", city:"雲林", district:"斗南鎮", neighborhood:""},
+  {key:"虎尾",      country:"台灣", city:"雲林", district:"虎尾鎮", neighborhood:""},
+  {key:"西螺",      country:"台灣", city:"雲林", district:"西螺鎮", neighborhood:"西螺老街"},
+  {key:"北港",      country:"台灣", city:"雲林", district:"北港鎮", neighborhood:""},
+  {key:"古坑",      country:"台灣", city:"雲林", district:"古坑鄉", neighborhood:""},
+  {key:"雲林縣",    country:"台灣", city:"雲林", district:"", neighborhood:""},
+  {key:"yunlin",    country:"台灣", city:"雲林", district:"", neighborhood:""},
+  // 嘉義縣
+  {key:"太保",      country:"台灣", city:"嘉義縣", district:"太保市", neighborhood:""},
+  {key:"朴子",      country:"台灣", city:"嘉義縣", district:"朴子市", neighborhood:""},
+  {key:"布袋",      country:"台灣", city:"嘉義縣", district:"布袋鎮", neighborhood:""},
+  {key:"大林",      country:"台灣", city:"嘉義縣", district:"大林鎮", neighborhood:""},
+  {key:"民雄",      country:"台灣", city:"嘉義縣", district:"民雄鄉", neighborhood:""},
+  {key:"阿里山",    country:"台灣", city:"嘉義縣", district:"阿里山鄉", neighborhood:"阿里山"},
+  {key:"嘉義縣",    country:"台灣", city:"嘉義縣", district:"", neighborhood:""},
+  // 屏東縣
+  {key:"屏東市",    country:"台灣", city:"屏東", district:"屏東市", neighborhood:""},
+  {key:"潮州",      country:"台灣", city:"屏東", district:"潮州鎮", neighborhood:""},
+  {key:"東港",      country:"台灣", city:"屏東", district:"東港鎮", neighborhood:""},
+  {key:"恆春",      country:"台灣", city:"屏東", district:"恆春鎮", neighborhood:"恆春古城"},
+  {key:"墾丁",      country:"台灣", city:"屏東", district:"恆春鎮", neighborhood:"墾丁"},
+  {key:"三地門",    country:"台灣", city:"屏東", district:"三地門鄉", neighborhood:""},
+  {key:"霧台",      country:"台灣", city:"屏東", district:"霧台鄉", neighborhood:""},
+  {key:"琉球",      country:"台灣", city:"屏東", district:"琉球鄉", neighborhood:"小琉球"},
+  {key:"小琉球",    country:"台灣", city:"屏東", district:"琉球鄉", neighborhood:"小琉球"},
+  {key:"屏東縣",    country:"台灣", city:"屏東", district:"", neighborhood:""},
+  {key:"pingtung",  country:"台灣", city:"屏東", district:"", neighborhood:""},
+  // 台東縣
+  {key:"台東市",    country:"台灣", city:"台東", district:"台東市", neighborhood:""},
+  {key:"臺東市",    country:"台灣", city:"台東", district:"台東市", neighborhood:""},
+  {key:"綠島",      country:"台灣", city:"台東", district:"綠島鄉", neighborhood:"綠島"},
+  {key:"蘭嶼",      country:"台灣", city:"台東", district:"蘭嶼鄉", neighborhood:"蘭嶼"},
+  {key:"鹿野",      country:"台灣", city:"台東", district:"鹿野鄉", neighborhood:""},
+  {key:"關山",      country:"台灣", city:"台東", district:"關山鎮", neighborhood:""},
+  {key:"成功",      country:"台灣", city:"台東", district:"成功鎮", neighborhood:""},
+  {key:"池上",      country:"台灣", city:"台東", district:"池上鄉", neighborhood:"池上"},
+  {key:"卑南",      country:"台灣", city:"台東", district:"卑南鄉", neighborhood:""},
+  {key:"台東縣",    country:"台灣", city:"台東", district:"", neighborhood:""},
+  {key:"taitung",   country:"台灣", city:"台東", district:"", neighborhood:""},
+  // 花蓮縣
+  {key:"東大門夜市",country:"台灣", city:"花蓮", district:"花蓮市", neighborhood:"東大門夜市"},
+  {key:"自強夜市",  country:"台灣", city:"花蓮", district:"花蓮市", neighborhood:"自強夜市"},
+  {key:"鯉魚潭",    country:"台灣", city:"花蓮", district:"壽豐鄉", neighborhood:"鯉魚潭"},
+  {key:"雲山水",    country:"台灣", city:"花蓮", district:"壽豐鄉", neighborhood:"雲山水"},
+  {key:"光復",      country:"台灣", city:"花蓮", district:"光復鄉", neighborhood:""},
+  {key:"瑞穗",      country:"台灣", city:"花蓮", district:"瑞穗鄉", neighborhood:""},
+  {key:"玉里",      country:"台灣", city:"花蓮", district:"玉里鎮", neighborhood:""},
+  {key:"富里",      country:"台灣", city:"花蓮", district:"富里鄉", neighborhood:""},
+  {key:"秀林",      country:"台灣", city:"花蓮", district:"秀林鄉", neighborhood:"太魯閣"},
+  {key:"太魯閣",    country:"台灣", city:"花蓮", district:"秀林鄉", neighborhood:"太魯閣"},
+  {key:"花蓮市",    country:"台灣", city:"花蓮", district:"", neighborhood:""},
+  {key:"花蓮縣",    country:"台灣", city:"花蓮", district:"", neighborhood:""},
+  {key:"hualien",   country:"台灣", city:"花蓮", district:"", neighborhood:""},
+  // 宜蘭縣
+  {key:"羅東夜市",  country:"台灣", city:"宜蘭", district:"羅東鎮", neighborhood:"羅東夜市"},
+  {key:"羅東林業",  country:"台灣", city:"宜蘭", district:"羅東鎮", neighborhood:"羅東林業文化園區"},
+  {key:"礁溪溫泉",  country:"台灣", city:"宜蘭", district:"礁溪鄉", neighborhood:"礁溪溫泉"},
+  {key:"礁溪",      country:"台灣", city:"宜蘭", district:"礁溪鄉", neighborhood:"礁溪溫泉"},
+  {key:"宜蘭市",    country:"台灣", city:"宜蘭", district:"宜蘭市", neighborhood:""},
+  {key:"頭城",      country:"台灣", city:"宜蘭", district:"頭城鎮", neighborhood:""},
+  {key:"壯圍",      country:"台灣", city:"宜蘭", district:"壯圍鄉", neighborhood:""},
+  {key:"員山",      country:"台灣", city:"宜蘭", district:"員山鄉", neighborhood:""},
+  {key:"三星",      country:"台灣", city:"宜蘭", district:"三星鄉", neighborhood:""},
+  {key:"冬山",      country:"台灣", city:"宜蘭", district:"冬山鄉", neighborhood:""},
+  {key:"蘇澳",      country:"台灣", city:"宜蘭", district:"蘇澳鎮", neighborhood:""},
+  {key:"南澳",      country:"台灣", city:"宜蘭", district:"南澳鄉", neighborhood:""},
+  {key:"宜蘭縣",    country:"台灣", city:"宜蘭", district:"", neighborhood:""},
+  {key:"羅東",      country:"台灣", city:"宜蘭", district:"羅東鎮", neighborhood:""},
+  {key:"yilan",     country:"台灣", city:"宜蘭", district:"", neighborhood:""},
+  // 澎湖縣
+  {key:"馬公",      country:"台灣", city:"澎湖", district:"馬公市", neighborhood:""},
+  {key:"澎湖",      country:"台灣", city:"澎湖", district:"", neighborhood:""},
+  {key:"penghu",    country:"台灣", city:"澎湖", district:"", neighborhood:""},
+  // 金門縣
+  {key:"金城",      country:"台灣", city:"金門", district:"金城鎮", neighborhood:""},
+  {key:"金湖",      country:"台灣", city:"金門", district:"金湖鎮", neighborhood:""},
+  {key:"金沙",      country:"台灣", city:"金門", district:"金沙鎮", neighborhood:""},
+  {key:"金門縣",    country:"台灣", city:"金門", district:"", neighborhood:""},
+  {key:"kinmen",    country:"台灣", city:"金門", district:"", neighborhood:""},
+  // 連江縣（馬祖）
+  {key:"南竿",      country:"台灣", city:"馬祖", district:"南竿鄉", neighborhood:""},
+  {key:"北竿",      country:"台灣", city:"馬祖", district:"北竿鄉", neighborhood:""},
+  {key:"馬祖",      country:"台灣", city:"馬祖", district:"", neighborhood:""},
+  {key:"連江縣",    country:"台灣", city:"馬祖", district:"", neighborhood:""},
+  {key:"matsu",     country:"台灣", city:"馬祖", district:"", neighborhood:""},
+
+
+  // ── 中國 ──────────────────────────────────────────────────────────────────
+  // 上海
+  {key:"外滩",      country:"中國", city:"上海", district:"黃浦區",   neighborhood:"外灘"},
+  {key:"外灘",      country:"中國", city:"上海", district:"黃浦區",   neighborhood:"外灘"},
+  {key:"南京路",    country:"中國", city:"上海", district:"黃浦區",   neighborhood:"南京路"},
+  {key:"豫园",      country:"中國", city:"上海", district:"黃浦區",   neighborhood:"豫園"},
+  {key:"新天地",    country:"中國", city:"上海", district:"黃浦區",   neighborhood:"新天地"},
+  {key:"南京西路",  country:"中國", city:"上海", district:"靜安區",   neighborhood:"南京西路"},
+  {key:"静安寺",    country:"中國", city:"上海", district:"靜安區",   neighborhood:"靜安寺"},
+  {key:"衡山路",    country:"中國", city:"上海", district:"徐匯區",   neighborhood:"衡山路"},
+  {key:"田子坊",    country:"中國", city:"上海", district:"徐匯區",   neighborhood:"田子坊"},
+  {key:"徐家汇",    country:"中國", city:"上海", district:"徐匯區",   neighborhood:"徐家匯"},
+  {key:"陆家嘴",    country:"中國", city:"上海", district:"浦東新區", neighborhood:"陸家嘴"},
+  {key:"陸家嘴",    country:"中國", city:"上海", district:"浦東新區", neighborhood:"陸家嘴"},
+  {key:"上海市",    country:"中國", city:"上海", district:"", neighborhood:""},
+  {key:"shanghai",  country:"中國", city:"上海", district:"", neighborhood:""},
+  // 北京
+  {key:"王府井",    country:"中國", city:"北京", district:"東城區",   neighborhood:"王府井"},
+  {key:"南锣鼓巷",  country:"中國", city:"北京", district:"東城區",   neighborhood:"南鑼鼓巷"},
+  {key:"故宫",      country:"中國", city:"北京", district:"東城區",   neighborhood:"故宮周邊"},
+  {key:"天安门",    country:"中國", city:"北京", district:"東城區",   neighborhood:"天安門"},
+  {key:"西单",      country:"中國", city:"北京", district:"西城區",   neighborhood:"西單"},
+  {key:"什刹海",    country:"中國", city:"北京", district:"西城區",   neighborhood:"什剎海"},
+  {key:"三里屯",    country:"中國", city:"北京", district:"朝陽區",   neighborhood:"三里屯"},
+  {key:"国贸",      country:"中國", city:"北京", district:"朝陽區",   neighborhood:"國貿"},
+  {key:"798",       country:"中國", city:"北京", district:"朝陽區",   neighborhood:"798"},
+  {key:"北京市",    country:"中國", city:"北京", district:"", neighborhood:""},
+  {key:"beijing",   country:"中國", city:"北京", district:"", neighborhood:""},
+  // 成都
+  {key:"春熙路",    country:"中國", city:"成都", district:"錦江區",   neighborhood:"春熙路"},
+  {key:"太古里",    country:"中國", city:"成都", district:"錦江區",   neighborhood:"太古里"},
+  {key:"宽窄巷子",  country:"中國", city:"成都", district:"武侯區",   neighborhood:"寬窄巷子"},
+  {key:"锦里",      country:"中國", city:"成都", district:"武侯區",   neighborhood:"錦里"},
+  {key:"玉林",      country:"中國", city:"成都", district:"武侯區",   neighborhood:"玉林"},
+  {key:"文殊院",    country:"中國", city:"成都", district:"青羊區",   neighborhood:"文殊院"},
+  {key:"成都市",    country:"中國", city:"成都", district:"", neighborhood:""},
+  {key:"chengdu",   country:"中國", city:"成都", district:"", neighborhood:""},
+  // 廣州
+  {key:"北京路",    country:"中國", city:"廣州", district:"越秀區",   neighborhood:"北京路"},
+  {key:"上下九",    country:"中國", city:"廣州", district:"越秀區",   neighborhood:"上下九"},
+  {key:"天河城",    country:"中國", city:"廣州", district:"天河區",   neighborhood:"天河城"},
+  {key:"珠江新城",  country:"中國", city:"廣州", district:"天河區",   neighborhood:"珠江新城"},
+  {key:"沙面",      country:"中國", city:"廣州", district:"荔灣區",   neighborhood:"沙面"},
+  {key:"广州市",    country:"中國", city:"廣州", district:"", neighborhood:""},
+  {key:"廣州市",    country:"中國", city:"廣州", district:"", neighborhood:""},
+  {key:"guangzhou", country:"中國", city:"廣州", district:"", neighborhood:""},
+  // 深圳
+  {key:"海岸城",    country:"中國", city:"深圳", district:"南山區",   neighborhood:"海岸城"},
+  {key:"蛇口",      country:"中國", city:"深圳", district:"南山區",   neighborhood:"蛇口"},
+  {key:"华强北",    country:"中國", city:"深圳", district:"福田區",   neighborhood:"華強北"},
+  {key:"东门",      country:"中國", city:"深圳", district:"羅湖區",   neighborhood:"東門"},
+  {key:"深圳市",    country:"中國", city:"深圳", district:"", neighborhood:""},
+  {key:"shenzhen",  country:"中國", city:"深圳", district:"", neighborhood:""},
+  // 杭州
+  {key:"西湖",      country:"中國", city:"杭州", district:"上城區",   neighborhood:"西湖"},
+  {key:"河坊街",    country:"中國", city:"杭州", district:"上城區",   neighborhood:"河坊街"},
+  {key:"清河坊",    country:"中國", city:"杭州", district:"上城區",   neighborhood:"清河坊"},
+  {key:"大运河",    country:"中國", city:"杭州", district:"拱墅區",   neighborhood:"大運河"},
+  {key:"灵隐寺",    country:"中國", city:"杭州", district:"西湖區",   neighborhood:"靈隱寺"},
+  {key:"龙井",      country:"中國", city:"杭州", district:"西湖區",   neighborhood:"龍井"},
+  {key:"杭州市",    country:"中國", city:"杭州", district:"", neighborhood:""},
+  {key:"hangzhou",  country:"中國", city:"杭州", district:"", neighborhood:""},
+  // 重慶
+  {key:"解放碑",    country:"中國", city:"重慶", district:"渝中區",   neighborhood:"解放碑"},
+  {key:"洪崖洞",    country:"中國", city:"重慶", district:"渝中區",   neighborhood:"洪崖洞"},
+  {key:"磁器口",    country:"中國", city:"重慶", district:"沙坪壩區", neighborhood:"磁器口"},
+  {key:"重庆市",    country:"中國", city:"重慶", district:"", neighborhood:""},
+  {key:"重慶市",    country:"中國", city:"重慶", district:"", neighborhood:""},
+  {key:"chongqing", country:"中國", city:"重慶", district:"", neighborhood:""},
+
+  // ── 泰國 ──────────────────────────────────────────────────────────────────
+  // 曼谷
+  {key:"暹罗",      country:"泰國", city:"曼谷", district:"巴吞旺縣", neighborhood:"暹羅"},
+  {key:"暹羅",      country:"泰國", city:"曼谷", district:"巴吞旺縣", neighborhood:"暹羅"},
+  {key:"siam",      country:"泰國", city:"曼谷", district:"巴吞旺縣", neighborhood:"暹羅"},
+  {key:"奇隆",      country:"泰國", city:"曼谷", district:"巴吞旺縣", neighborhood:"奇隆"},
+  {key:"chidlom",   country:"泰國", city:"曼谷", district:"巴吞旺縣", neighborhood:"奇隆"},
+  {key:"素坤逸",    country:"泰國", city:"曼谷", district:"素坤逸",   neighborhood:"素坤逸"},
+  {key:"sukhumvit", country:"泰國", city:"曼谷", district:"素坤逸",   neighborhood:"素坤逸"},
+  {key:"通罗",      country:"泰國", city:"曼谷", district:"素坤逸",   neighborhood:"通羅"},
+  {key:"通羅",      country:"泰國", city:"曼谷", district:"素坤逸",   neighborhood:"通羅"},
+  {key:"thonglor",  country:"泰國", city:"曼谷", district:"素坤逸",   neighborhood:"通羅"},
+  {key:"艾卡迈",    country:"泰國", city:"曼谷", district:"素坤逸",   neighborhood:"艾卡邁"},
+  {key:"ekkamai",   country:"泰國", city:"曼谷", district:"素坤逸",   neighborhood:"艾卡邁"},
+  {key:"考山路",    country:"泰國", city:"曼谷", district:"考山路",   neighborhood:"考山路"},
+  {key:"khao san",  country:"泰國", city:"曼谷", district:"考山路",   neighborhood:"考山路"},
+  {key:"唐人街",    country:"泰國", city:"曼谷", district:"唐人街",   neighborhood:"耀華力路"},
+  {key:"yaowarat",  country:"泰國", city:"曼谷", district:"唐人街",   neighborhood:"耀華力路"},
+  {key:"察图察",    country:"泰國", city:"曼谷", district:"察圖察",   neighborhood:"察圖察週末市場"},
+  {key:"chatuchak", country:"泰國", city:"曼谷", district:"察圖察",   neighborhood:"察圖察週末市場"},
+  {key:"曼谷",      country:"泰國", city:"曼谷", district:"", neighborhood:""},
+  {key:"bangkok",   country:"泰國", city:"曼谷", district:"", neighborhood:""},
+  // 清邁
+  {key:"古城",      country:"泰國", city:"清邁", district:"古城區", neighborhood:"古城"},
+  {key:"尼曼",      country:"泰國", city:"清邁", district:"尼曼區", neighborhood:"尼曼路"},
+  {key:"nimman",    country:"泰國", city:"清邁", district:"尼曼區", neighborhood:"尼曼路"},
+  {key:"清迈",      country:"泰國", city:"清邁", district:"", neighborhood:""},
+  {key:"清邁",      country:"泰國", city:"清邁", district:"", neighborhood:""},
+  {key:"chiang mai",country:"泰國", city:"清邁", district:"", neighborhood:""},
+  // 普吉
+  {key:"芭东",      country:"泰國", city:"普吉", district:"芭東", neighborhood:"芭東海灘"},
+  {key:"patong",    country:"泰國", city:"普吉", district:"芭東", neighborhood:"芭東海灘"},
+  {key:"普吉",      country:"泰國", city:"普吉", district:"", neighborhood:""},
+  {key:"phuket",    country:"泰國", city:"普吉", district:"", neighborhood:""},
+
+  // ── 新加坡 ────────────────────────────────────────────────────────────────
+  {key:"乌节路",    country:"新加坡", city:"新加坡", district:"烏節路", neighborhood:"烏節路"},
+  {key:"orchard",   country:"新加坡", city:"新加坡", district:"烏節路", neighborhood:"烏節路"},
+  {key:"濱海灣",    country:"新加坡", city:"新加坡", district:"濱海灣", neighborhood:"濱海灣花園"},
+  {key:"marina bay",country:"新加坡", city:"新加坡", district:"濱海灣", neighborhood:"濱海灣花園"},
+  {key:"克拉碼頭",  country:"新加坡", city:"新加坡", district:"克拉碼頭", neighborhood:"克拉碼頭"},
+  {key:"clarke quay",country:"新加坡",city:"新加坡",district:"克拉碼頭",neighborhood:"克拉碼頭"},
+  {key:"牛車水",    country:"新加坡", city:"新加坡", district:"牛車水", neighborhood:"牛車水"},
+  {key:"chinatown", country:"新加坡", city:"新加坡", district:"牛車水", neighborhood:"牛車水"},
+  {key:"小印度",    country:"新加坡", city:"新加坡", district:"小印度", neighborhood:"小印度"},
+  {key:"little india",country:"新加坡",city:"新加坡",district:"小印度",neighborhood:"小印度"},
+  {key:"阿拉伯街",  country:"新加坡", city:"新加坡", district:"甘榜格南", neighborhood:"阿拉伯街"},
+  {key:"arab street",country:"新加坡",city:"新加坡",district:"甘榜格南",neighborhood:"阿拉伯街"},
+  {key:"聖淘沙",    country:"新加坡", city:"新加坡", district:"聖淘沙", neighborhood:"聖淘沙"},
+  {key:"sentosa",   country:"新加坡", city:"新加坡", district:"聖淘沙", neighborhood:"聖淘沙"},
+  {key:"singapore", country:"新加坡", city:"新加坡", district:"", neighborhood:""},
+  {key:"新加坡",    country:"新加坡", city:"新加坡", district:"", neighborhood:""},
 ];
 
-function parseKoreanAddress(addr: string): { city?: string; district?: string; neighborhood?: string } | null {
+function parseAddressMultiCountry(addr: string): { country?:string; city?: string; district?: string; neighborhood?: string } | null {
   const lower = addr.toLowerCase();
-  // 按關鍵字長度排序（長的優先，避免「한남」被「남」先匹配）
-  const sorted = [...KR_KEYWORD_MAP].sort((a,b)=>b.key.length-a.key.length);
+  const sorted = [...ADDRESS_MAP].sort((a,b)=>b.key.length-a.key.length);
   for(const item of sorted){
-    if(lower.includes(item.key)){
-      return { city:item.city, district:item.district, neighborhood:item.neighborhood };
+    if(lower.includes(item.key.toLowerCase())){
+      return { country:item.country, city:item.city, district:item.district, neighborhood:item.neighborhood };
     }
   }
-  // 只有서울，帶國家城市
-  if(lower.includes("서울")||lower.includes("seoul")){
-    return { city:"首爾", district:"", neighborhood:"" };
-  }
-  if(lower.includes("부산")||lower.includes("busan")){
-    return { city:"釜山", district:"", neighborhood:"" };
-  }
+  return null;
+}
+
+const KR_KEYWORD_MAP = ADDRESS_MAP.filter(x=>x.country==="韓國");
+
+function parseKoreanAddress(addr: string): { city?: string; district?: string; neighborhood?: string } | null {
+  const result = parseAddressMultiCountry(addr);
+  if(result?.country==="韓國") return result;
   return null;
 }
 
@@ -1236,21 +1879,8 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
   function handleAddressChange(addr: string) {
     setF((x:any) => ({ ...x, address: addr }));
     if (addr.length > 3) {
-      // 先試韓文解析
-      const krParsed = parseKoreanAddress(addr);
-      if (krParsed) {
-        setF((x:any) => ({
-          ...x, address: addr,
-          country: "韓國",
-          ...(krParsed.city && { city: krParsed.city }),
-          ...(krParsed.district && { district: krParsed.district }),
-          ...(krParsed.neighborhood && { neighborhood: krParsed.neighborhood }),
-        }));
-        return;
-      }
-      // 再試中文解析
-      const parsed = parseAddress(addr, GEO);
-      if (parsed) {
+      const parsed = parseAddressMultiCountry(addr);
+      if (parsed && (parsed.country||parsed.city||parsed.district||parsed.neighborhood)) {
         setF((x:any) => ({
           ...x, address: addr,
           ...(parsed.country && { country: parsed.country }),
@@ -1550,15 +2180,24 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
               <div style={{ fontSize:14, color:"#000" }}>{place.address || "未填寫"}</div>
             </div>
             <div style={{ display:"flex", gap:8 }}>
-              <a href={`https://maps.google.com/?q=${q}`} target="_blank" rel="noreferrer"
-                style={{ width:36, height:36, borderRadius:10, background:"#fff", display:"flex", alignItems:"center", justifyContent:"center", textDecoration:"none", boxShadow:"0 1px 4px rgba(0,0,0,0.12)" }} title="Google Maps">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#EA4335"/>
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 1.93.78 3.68 2.04 4.96L12 2z" fill="#FBBC04"/>
-                  <path d="M12 2l4.96 11.96C18.22 12.68 19 10.93 19 9c0-3.87-3.13-7-7-7z" fill="#4285F4"/>
-                  <circle cx="12" cy="9" r="2.5" fill="white"/>
-                </svg>
-              </a>
+              {/* 中國用高德，其他用 Google Maps */}
+              {place.country==="中國" ? (
+                <a href={`https://uri.amap.com/search?keyword=${q}`} target="_blank" rel="noreferrer"
+                  style={{ width:36, height:36, borderRadius:10, background:"#1677FF", display:"flex", alignItems:"center", justifyContent:"center", textDecoration:"none" }} title="高德地圖">
+                  <span style={{ color:"white", fontSize:13, fontWeight:700 }}>高德</span>
+                </a>
+              ) : (
+                <a href={`https://maps.google.com/?q=${q}`} target="_blank" rel="noreferrer"
+                  style={{ width:36, height:36, borderRadius:10, background:"#fff", display:"flex", alignItems:"center", justifyContent:"center", textDecoration:"none", boxShadow:"0 1px 4px rgba(0,0,0,0.12)" }} title="Google Maps">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#EA4335"/>
+                    <path d="M12 2C8.13 2 5 5.13 5 9c0 1.93.78 3.68 2.04 4.96L12 2z" fill="#FBBC04"/>
+                    <path d="M12 2l4.96 11.96C18.22 12.68 19 10.93 19 9c0-3.87-3.13-7-7-7z" fill="#4285F4"/>
+                    <circle cx="12" cy="9" r="2.5" fill="white"/>
+                  </svg>
+                </a>
+              )}
+              {/* 韓國加 Naver Maps */}
               {place.country==="韓國" && (
                 <a href={`https://map.naver.com/v5/search/${q}`} target="_blank" rel="noreferrer"
                   style={{ width:36, height:36, borderRadius:10, background:"#03C75A", display:"flex", alignItems:"center", justifyContent:"center", textDecoration:"none" }} title="Naver Maps">
