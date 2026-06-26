@@ -987,6 +987,69 @@ function CountryPage({ country, places, onBack, onSelect }) {
 // ── Add ───────────────────────────────────────────────────────────────────────
 // ── Address Parser ────────────────────────────────────────────────────────────
 // Simplified→Traditional Chinese mapping for common address terms
+// 韓文地址對應表
+const KR_DISTRICT_MAP: Record<string, { city: string; district: string; neighborhood: string }> = {
+  // 서울 麻浦區
+  "마포구": { city:"首爾", district:"麻浦區", neighborhood:"" },
+  "홍대": { city:"首爾", district:"麻浦區", neighborhood:"弘大" },
+  "연남동": { city:"首爾", district:"麻浦區", neighborhood:"延南" },
+  "망원동": { city:"首爾", district:"麻浦區", neighborhood:"望遠" },
+  "합정동": { city:"首爾", district:"麻浦區", neighborhood:"合井" },
+  "상수동": { city:"首爾", district:"麻浦區", neighborhood:"上水" },
+  // 서울 龍山區
+  "용산구": { city:"首爾", district:"龍山區", neighborhood:"" },
+  "이태원동": { city:"首爾", district:"龍山區", neighborhood:"梨泰院" },
+  "한남동": { city:"首爾", district:"龍山區", neighborhood:"漢南" },
+  // 서울 城東區
+  "성동구": { city:"首爾", district:"城東區", neighborhood:"" },
+  "성수동": { city:"首爾", district:"城東區", neighborhood:"聖水" },
+  "뚝섬": { city:"首爾", district:"城東區", neighborhood:"纛島" },
+  "왕십리": { city:"首爾", district:"城東區", neighborhood:"往十里" },
+  // 서울 江南區
+  "강남구": { city:"首爾", district:"江南區", neighborhood:"" },
+  "압구정동": { city:"首爾", district:"江南區", neighborhood:"狎鷗亭" },
+  "청담동": { city:"首爾", district:"江南區", neighborhood:"清潭" },
+  "신사동": { city:"首爾", district:"江南區", neighborhood:"新沙" },
+  "삼성동": { city:"首爾", district:"江南區", neighborhood:"三成" },
+  // 서울 鐘路區
+  "종로구": { city:"首爾", district:"鐘路區", neighborhood:"" },
+  "인사동": { city:"首爾", district:"鐘路區", neighborhood:"仁寺洞" },
+  "익선동": { city:"首爾", district:"鐘路區", neighborhood:"益善洞" },
+  "삼청동": { city:"首爾", district:"鐘路區", neighborhood:"三清洞" },
+  // 서울 中區
+  "중구": { city:"首爾", district:"中區", neighborhood:"" },
+  "명동": { city:"首爾", district:"中區", neighborhood:"明洞" },
+  "을지로": { city:"首爾", district:"中區", neighborhood:"乙支路" },
+  // 서울 廣津區
+  "광진구": { city:"首爾", district:"廣津區", neighborhood:"" },
+  "건대": { city:"首爾", district:"廣津區", neighborhood:"建大" },
+  // 서울 松坡區
+  "송파구": { city:"首爾", district:"松坡區", neighborhood:"" },
+  "잠실동": { city:"首爾", district:"松坡區", neighborhood:"蠶室" },
+  // 서울 瑞草區
+  "서초구": { city:"首爾", district:"瑞草區", neighborhood:"" },
+  "교대": { city:"首爾", district:"瑞草區", neighborhood:"教大" },
+  // 서울 東大門區
+  "동대문구": { city:"首爾", district:"東大門區", neighborhood:"" },
+  // 釜山
+  "해운대구": { city:"釜山", district:"海雲台區", neighborhood:"" },
+  "해운대": { city:"釜山", district:"海雲台區", neighborhood:"海雲台" },
+  "광안리": { city:"釜山", district:"海雲台區", neighborhood:"廣安里" },
+  "부산진구": { city:"釜山", district:"釜山鎮區", neighborhood:"" },
+  "서면": { city:"釜山", district:"釜山鎮區", neighborhood:"西面" },
+};
+
+function parseKoreanAddress(addr: string): { city?: string; district?: string; neighborhood?: string } | null {
+  const lower = addr.toLowerCase();
+  // 先找最精確的（洞/동 level）
+  for (const [key, val] of Object.entries(KR_DISTRICT_MAP)) {
+    if (lower.includes(key)) {
+      return val;
+    }
+  }
+  return null;
+}
+
 const SIMP_TO_TRAD = {
   "韩国":"韓國","首尔":"首爾","釜山":"釜山","济州":"濟州",
   "龙山区":"龍山區","麻浦区":"麻浦區","江南区":"江南區","城东区":"城東區",
@@ -1095,12 +1158,25 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp }) {
   const photoInputRef = useRef(null);
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
 
-  function handleAddressChange(addr) {
-    setF(x => ({ ...x, address: addr }));
-    if (addr.length > 5) {
+  function handleAddressChange(addr: string) {
+    setF((x:any) => ({ ...x, address: addr }));
+    if (addr.length > 3) {
+      // 先試韓文解析
+      const krParsed = parseKoreanAddress(addr);
+      if (krParsed) {
+        setF((x:any) => ({
+          ...x, address: addr,
+          country: "韓國",
+          ...(krParsed.city && { city: krParsed.city }),
+          ...(krParsed.district && { district: krParsed.district }),
+          ...(krParsed.neighborhood && { neighborhood: krParsed.neighborhood }),
+        }));
+        return;
+      }
+      // 再試中文解析
       const parsed = parseAddress(addr, GEO);
       if (parsed) {
-        setF(x => ({
+        setF((x:any) => ({
           ...x, address: addr,
           ...(parsed.country && { country: parsed.country }),
           ...(parsed.city && { city: parsed.city }),
