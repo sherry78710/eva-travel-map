@@ -1499,7 +1499,11 @@ export default function App() {
   // ── 載入資料 ──
   useEffect(()=>{
     sb.from('places').select('*').order('created_at',{ascending:false})
-      .then(({data})=>{ if(data) setPlaces(data); setLoading(false); });
+      .then(({data, error})=>{
+        if(data) setPlaces(data);
+        setLoading(false);
+      })
+      .catch(()=>{ setLoading(false); });
   },[]);
 
   const page = history[history.length-1];
