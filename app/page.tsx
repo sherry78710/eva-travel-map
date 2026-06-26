@@ -1424,60 +1424,198 @@ function Search({ places, onBack, onSelect }) {
 // ── Notes ─────────────────────────────────────────────────────────────────────
 function Notes({ onBack, countries }) {
   const [country,setCountry]=useState(countries[0]||"韓國");
-  const [notes,setNotes]=useState([
-    {id:"1",country:"韓國",category:"交通",content:"T-money 卡在便利商店購買，可搭地鐵和公車"},
-    {id:"2",country:"韓國",category:"退稅",content:"消費滿 30,000 韓元可退稅，出境前在機場辦理"},
-    {id:"3",country:"日本",category:"禮儀",content:"地鐵上盡量不講電話"},
-  ]);
-  const [adding,setAdding]=useState(false); const [newCat,setNewCat]=useState("入境"); const [newContent,setNewContent]=useState("");
-  const CATS=["入境","交通","退稅","禮儀","緊急聯絡","其他"];
+  const [notes,setNotes]=useState<any[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [cats,setCats]=useState(["入境","交通","退稅","禮儀","緊急聯絡","其他"]);
+  const [adding,setAdding]=useState(false);
+  const [newCat,setNewCat]=useState("入境");
+  const [newContent,setNewContent]=useState("");
+  const [newPhotos,setNewPhotos]=useState<string[]>([]);
+  const [editingNote,setEditingNote]=useState<any>(null);
+  const [newCatInput,setNewCatInput]=useState("");
+  const [showCatInput,setShowCatInput]=useState(false);
+  const [lightbox,setLightbox]=useState<string|null>(null);
+  const photoInputRef=useRef<HTMLInputElement>(null);
+  const editPhotoInputRef=useRef<HTMLInputElement>(null);
+
+  // 載入備忘錄
+  useEffect(()=>{
+    sb.from('country_notes').select('*').order('created_at',{ascending:false})
+      .then(({data})=>{ if(data) setNotes(data); setLoading(false); });
+  },[]);
+
   const filtered=notes.filter(n=>n.country===country);
-  const grouped={};
+  const grouped:any={};
   filtered.forEach(n=>{ if(!grouped[n.category]) grouped[n.category]=[]; grouped[n.category].push(n); });
+
+  function handlePhotoAdd(e:any, setter:any) {
+    const files=Array.from(e.target.files||[]);
+    files.forEach((file:any)=>{
+      const reader=new FileReader();
+      reader.onload=ev=>setter((prev:any)=>[...prev, ev.target?.result as string]);
+      reader.readAsDataURL(file);
+    });
+    e.target.value="";
+  }
+
+  async function handleSave() {
+    if(!newContent.trim()) return;
+    const payload={country, category:newCat, content:newContent.trim(), photos:newPhotos};
+    const {data,error}=await sb.from('country_notes').insert([payload]).select().single();
+    if(!error&&data){ setNotes(ns=>[data,...ns]); }
+    setNewContent(""); setNewPhotos([]); setAdding(false);
+  }
+
+  async function handleDelete(id:string) {
+    await sb.from('country_notes').delete().eq('id',id);
+    setNotes(ns=>ns.filter(n=>n.id!==id));
+  }
+
+  async function handleEditSave() {
+    if(!editingNote) return;
+    const {error}=await sb.from('country_notes').update({
+      content:editingNote.content, category:editingNote.category, photos:editingNote.photos||[]
+    }).eq('id',editingNote.id);
+    if(!error){ setNotes(ns=>ns.map(n=>n.id===editingNote.id?editingNote:n)); }
+    setEditingNote(null);
+  }
+
+  function addCat() {
+    const c=newCatInput.trim();
+    if(c&&!cats.includes(c)){ setCats(prev=>[...prev,c]); setNewCat(c); }
+    setNewCatInput(""); setShowCatInput(false);
+  }
+
   return (
-    <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
-      <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 16px)", paddingBottom:"0", paddingLeft:"20px", paddingRight:"20px" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-          <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0 }}>‹ 返回</button>
-          <div style={{ fontSize:17, fontWeight:600 }}>國家備忘錄</div>
-          <button onClick={()=>setAdding(!adding)} style={{ background:"none", border:"none", color:"#007AFF", fontSize:24, cursor:"pointer", padding:0, lineHeight:1 }}>+</button>
+    <div style={{display:"flex",flexDirection:"column",width:"100%",height:"100%",background:"#F5F0EB"}}>
+      {/* 固定頂部 */}
+      <div style={{flexShrink:0,background:"#FDF8F3",paddingTop:"calc(env(safe-area-inset-top) + 12px)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0 20px 12px"}}>
+          <button onClick={onBack} style={{background:"none",border:"none",color:"#007AFF",fontSize:16,cursor:"pointer",padding:0}}>‹ 返回</button>
+          <div style={{fontSize:17,fontWeight:600}}>國家備忘錄</div>
+          <button onClick={()=>{setAdding(a=>!a);setNewContent("");setNewPhotos([]);}} style={{background:"none",border:"none",color:"#007AFF",fontSize:24,cursor:"pointer",padding:0,lineHeight:1}}>+</button>
         </div>
-        <div style={{ display:"flex", overflowX:"auto" }}>
+        <div style={{display:"flex",overflowX:"auto",borderTop:"1px solid #EDE8E2"}}>
           {countries.map(c=>(
-            <button key={c} onClick={()=>setCountry(c)} style={{ flexShrink:0, padding:"10px 16px", border:"none", background:"none", borderBottom:country===c?"2px solid #000":"2px solid transparent", color:country===c?"#000":"#8E8E93", fontSize:14, fontWeight:country===c?600:400, cursor:"pointer" }}>{c}</button>
+            <button key={c} onClick={()=>setCountry(c)} style={{flexShrink:0,padding:"10px 16px",border:"none",background:"none",borderBottom:country===c?"2px solid #000":"2px solid transparent",color:country===c?"#000":"#8E8E93",fontSize:14,fontWeight:country===c?600:400,cursor:"pointer"}}>{c}</button>
           ))}
         </div>
       </div>
-      {adding && (
-        <div style={{ background:"#FDF8F3", margin:"12px 20px 0", borderRadius:16, padding:14 }}>
-          <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:10 }}>
-            {CATS.map(c=><button key={c} onClick={()=>setNewCat(c)} style={{ padding:"5px 12px", borderRadius:20, border:"none", background:newCat===c?"#000":"#EDE8E2", color:newCat===c?"white":"#3C3C43", fontSize:13, cursor:"pointer" }}>{c}</button>)}
+
+      {/* 滾動區域 */}
+      <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"12px 20px 40px"}}>
+
+        {/* 新增表單 */}
+        {adding && (
+          <div style={{background:"#FDF8F3",borderRadius:16,padding:14,marginBottom:12}}>
+            {/* 類別選擇 */}
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+              {cats.map(c=>(
+                <button key={c} onClick={()=>setNewCat(c)} style={{padding:"5px 12px",borderRadius:20,border:"none",background:newCat===c?"#000":"#EDE8E2",color:newCat===c?"white":"#3C3C43",fontSize:13,cursor:"pointer"}}>{c}</button>
+              ))}
+              <button onClick={()=>setShowCatInput(v=>!v)} style={{padding:"5px 12px",borderRadius:20,border:"1.5px dashed #C9C4BE",background:"none",color:"#8E8E93",fontSize:13,cursor:"pointer"}}>+ 新增類別</button>
+            </div>
+            {showCatInput && (
+              <div style={{display:"flex",gap:8,marginBottom:10}}>
+                <input value={newCatInput} onChange={e=>setNewCatInput(e.target.value)} placeholder="類別名稱" style={{flex:1,border:"1px solid #EDE8E2",borderRadius:8,padding:"7px 10px",fontSize:14,outline:"none",background:"#F5F0EB",fontFamily:"inherit"}} />
+                <button onClick={addCat} style={{padding:"7px 14px",border:"none",borderRadius:8,background:"#000",color:"white",fontSize:13,cursor:"pointer"}}>新增</button>
+              </div>
+            )}
+            {/* 內容 */}
+            <textarea value={newContent} onChange={e=>setNewContent(e.target.value)} placeholder="寫下備忘事項..." rows={3}
+              style={{width:"100%",border:"none",borderRadius:10,padding:"10px 12px",fontSize:15,color:"#000",outline:"none",background:"#F5F0EB",resize:"none",fontFamily:"inherit",boxSizing:"border-box",marginBottom:10}} />
+            {/* 照片 */}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+              {newPhotos.map((p,i)=>(
+                <div key={i} style={{position:"relative",width:64,height:64,borderRadius:8,overflow:"hidden",flexShrink:0}}>
+                  <img src={p} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} />
+                  <button onClick={()=>setNewPhotos(ps=>ps.filter((_,idx)=>idx!==i))} style={{position:"absolute",top:2,right:2,width:16,height:16,borderRadius:"50%",background:"rgba(0,0,0,0.6)",border:"none",color:"white",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                </div>
+              ))}
+              <button onClick={()=>photoInputRef.current?.click()} style={{width:64,height:64,borderRadius:8,border:"1.5px dashed #C9C4BE",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,color:"#8E8E93",flexShrink:0}}>
+                <span style={{fontSize:20}}>+</span>
+                <span style={{fontSize:9}}>加照片</span>
+              </button>
+              <input ref={photoInputRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>handlePhotoAdd(e,setNewPhotos)} />
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setAdding(false)} style={{flex:1,padding:11,border:"none",borderRadius:12,background:"#F5F0EB",color:"#3C3C43",fontSize:14,cursor:"pointer"}}>取消</button>
+              <button onClick={handleSave} style={{flex:2,padding:11,border:"none",borderRadius:12,background:"#000",color:"white",fontSize:14,fontWeight:600,cursor:"pointer"}}>儲存</button>
+            </div>
           </div>
-          <textarea value={newContent} onChange={e=>setNewContent(e.target.value)} rows={3}
-            style={{ width:"100%", border:"none", borderRadius:10, padding:"10px 12px", fontSize:15, color:"#000", outline:"none", background:"#F5F0EB", resize:"none", fontFamily:"inherit", boxSizing:"border-box", marginBottom:10 }} />
-          <div style={{ display:"flex", gap:8 }}>
-            <button onClick={()=>setAdding(false)} style={{ flex:1, padding:11, border:"none", borderRadius:12, background:"#F5F0EB", color:"#3C3C43", fontSize:14, cursor:"pointer" }}>取消</button>
-            <button onClick={()=>{ if(newContent.trim()){ setNotes(ns=>[...ns,{id:String(Date.now()),country,category:newCat,content:newContent.trim()}]); setNewContent(""); setAdding(false); }}}
-              style={{ flex:2, padding:11, border:"none", borderRadius:12, background:"#000", color:"white", fontSize:14, fontWeight:600, cursor:"pointer" }}>儲存</button>
+        )}
+
+        {/* 編輯 Modal */}
+        {editingNote && (
+          <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.5)",zIndex:100,display:"flex",alignItems:"flex-end"}}>
+            <div style={{background:"#FDF8F3",borderRadius:"16px 16px 0 0",padding:"20px 20px 40px",width:"100%"}}>
+              <div style={{fontSize:16,fontWeight:600,marginBottom:12}}>編輯備忘錄</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                {cats.map(c=>(
+                  <button key={c} onClick={()=>setEditingNote((n:any)=>({...n,category:c}))} style={{padding:"5px 12px",borderRadius:20,border:"none",background:editingNote.category===c?"#000":"#EDE8E2",color:editingNote.category===c?"white":"#3C3C43",fontSize:13,cursor:"pointer"}}>{c}</button>
+                ))}
+              </div>
+              <textarea value={editingNote.content} onChange={e=>setEditingNote((n:any)=>({...n,content:e.target.value}))} rows={4}
+                style={{width:"100%",border:"none",borderRadius:10,padding:"10px 12px",fontSize:15,color:"#000",outline:"none",background:"#F5F0EB",resize:"none",fontFamily:"inherit",boxSizing:"border-box",marginBottom:10}} />
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                {(editingNote.photos||[]).map((p:string,i:number)=>(
+                  <div key={i} style={{position:"relative",width:64,height:64,borderRadius:8,overflow:"hidden",flexShrink:0}}>
+                    <img src={p} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} />
+                    <button onClick={()=>setEditingNote((n:any)=>({...n,photos:n.photos.filter((_:any,idx:number)=>idx!==i)}))} style={{position:"absolute",top:2,right:2,width:16,height:16,borderRadius:"50%",background:"rgba(0,0,0,0.6)",border:"none",color:"white",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                  </div>
+                ))}
+                <button onClick={()=>editPhotoInputRef.current?.click()} style={{width:64,height:64,borderRadius:8,border:"1.5px dashed #C9C4BE",background:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,color:"#8E8E93",flexShrink:0}}>
+                  <span style={{fontSize:20}}>+</span>
+                  <span style={{fontSize:9}}>加照片</span>
+                </button>
+                <input ref={editPhotoInputRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>handlePhotoAdd(e,(photos:string[])=>setEditingNote((n:any)=>({...n,photos:[...(n.photos||[]),...photos]})))} />
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>setEditingNote(null)} style={{flex:1,padding:12,border:"none",borderRadius:12,background:"#F5F0EB",color:"#3C3C43",fontSize:14,cursor:"pointer"}}>取消</button>
+                <button onClick={handleEditSave} style={{flex:2,padding:12,border:"none",borderRadius:12,background:"#000",color:"white",fontSize:14,fontWeight:600,cursor:"pointer"}}>儲存</button>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
-      <div style={{ padding:"12px 20px" }}>
-        {filtered.length===0&&<div style={{ textAlign:"center", padding:"60px 0", color:"#8E8E93", fontSize:15 }}>還沒有 {country} 的備忘錄</div>}
-        {Object.entries(grouped).map(([cat,catNotes])=>(
-          <div key={cat} style={{ marginBottom:14 }}>
-            <div style={{ fontSize:11, color:"#8E8E93", letterSpacing:1, textTransform:"uppercase", marginBottom:6 }}>{cat}</div>
-            <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden" }}>
-              {catNotes.map((n,i)=>(
-                <div key={n.id} style={{ display:"flex", alignItems:"flex-start", gap:12, padding:"14px 16px", borderBottom:i<catNotes.length-1?"1px solid #EDE8E2":"none" }}>
-                  <div style={{ flex:1, fontSize:15, color:"#000", lineHeight:1.5 }}>{n.content}</div>
-                  <button onClick={()=>setNotes(ns=>ns.filter(x=>x.id!==n.id))} style={{ background:"none", border:"none", cursor:"pointer", color:"#C7C7CC", fontSize:18, padding:0, flexShrink:0 }}>×</button>
+        )}
+
+        {/* 備忘錄列表 */}
+        {loading && <div style={{textAlign:"center",padding:"40px 0",color:"#8E8E93"}}>載入中...</div>}
+        {!loading && filtered.length===0 && <div style={{textAlign:"center",padding:"60px 0",color:"#8E8E93",fontSize:15}}>還沒有 {country} 的備忘錄</div>}
+        {Object.entries(grouped).map(([cat,catNotes]:any)=>(
+          <div key={cat} style={{marginBottom:14}}>
+            <div style={{fontSize:11,color:"#8E8E93",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>{cat}</div>
+            <div style={{background:"#FDF8F3",borderRadius:16,overflow:"hidden"}}>
+              {catNotes.map((n:any,i:number)=>(
+                <div key={n.id} style={{padding:"14px 16px",borderBottom:i<catNotes.length-1?"1px solid #EDE8E2":"none"}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                    <div style={{flex:1,fontSize:15,color:"#000",lineHeight:1.5}}>{n.content}</div>
+                    <div style={{display:"flex",gap:8,flexShrink:0}}>
+                      <button onClick={()=>setEditingNote({...n,photos:n.photos||[]})} style={{background:"none",border:"none",color:"#007AFF",fontSize:13,cursor:"pointer",padding:0}}>編輯</button>
+                      <button onClick={()=>handleDelete(n.id)} style={{background:"none",border:"none",color:"#C7C7CC",fontSize:18,cursor:"pointer",padding:0}}>×</button>
+                    </div>
+                  </div>
+                  {(n.photos||[]).length>0 && (
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                      {(n.photos||[]).map((p:string,pi:number)=>(
+                        <div key={pi} onClick={()=>setLightbox(p)} style={{width:64,height:64,borderRadius:8,overflow:"hidden",cursor:"pointer",flexShrink:0}}>
+                          <img src={p} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           </div>
         ))}
       </div>
+
+      {/* 照片放大 */}
+      {lightbox && (
+        <div onClick={()=>setLightbox(null)} style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.9)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <img src={lightbox} alt="" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}} />
+        </div>
+      )}
     </div>
   );
 }
