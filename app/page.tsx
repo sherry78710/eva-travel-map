@@ -1572,13 +1572,11 @@ export default function App() {
     const dy=e.touches[0].clientY-touchStartY.current;
     if(touchStartX.current<60&&Math.abs(dx)>Math.abs(dy)&&dx>0){
       isSwiping.current=true;
-      // 加阻尼讓滑動感覺更自然
-      const damped = Math.pow(dx, 0.85);
-      setSlideX(Math.min(damped, window.innerWidth * 0.85));
+      setSlideX(Math.min(dx, window.innerWidth));
     }
   }
   function onTouchEnd(){
-    if(isSwiping.current&&slideX>window.innerWidth*0.3&&page!=="home") goBack();
+    if(isSwiping.current&&slideX>60&&page!=="home") goBack();
     setSlideX(0); isSwiping.current=false;
   }
 
