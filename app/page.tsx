@@ -1148,15 +1148,11 @@ function parseAddress(addr, geoData) {
   };
 }
 
-function Add({ onBack, onAdd, countries, types, geoData: geoDataProp }) {
-  const firstC = countries[0]||"韓國";
-  const firstCity = getCities(firstC)[0]||"";
-  const firstDist = getDistricts(firstC,firstCity)[0]||"";
-  const firstNb = getNeighborhoods(firstC,firstCity,firstDist)[0]||"";
-  const [f,setF] = useState({ name:"",country:firstC,city:firstCity,district:firstDist,neighborhood:firstNb,types:[],note:"",address:"",recommendations:"",source_url:"",rating:0,review:"",photos:[] });
+function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb }) {
+  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",address:"",recommendations:"",source_url:"",rating:0,review:"",photos:[] });
   const [saving,setSaving] = useState(false);
   const photoInputRef = useRef(null);
-  const set=(k,v)=>setF(x=>({...x,[k]:v}));
+  const set=(k:string,v:any)=>setF((x:any)=>({...x,[k]:v}));
 
   function handleAddressChange(addr: string) {
     setF((x:any) => ({ ...x, address: addr }));
@@ -1204,6 +1200,10 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp }) {
   function handleSave() {
     if (!f.name.trim() || saving) return;
     setSaving(true);
+    // 自動新增商圈（如果清單裡沒有）
+    if(f.neighborhood && f.country && f.city && f.district && onAutoAddNb){
+      onAutoAddNb(f.country, f.city, f.district, f.neighborhood);
+    }
     onAdd({...f, id:String(Date.now()), status:"wishlist"});
     onBack();
   }
@@ -1222,11 +1222,11 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp }) {
         <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
           <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地點名稱</div>
-            <input value={f.name} onChange={e=>set("name",e.target.value)} placeholder="例：麵首爾 Myeon Seoul" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
+            <input value={f.name} onChange={e=>set("name",e.target.value)} placeholder="" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
           <div style={{ padding:"14px 16px" }}>
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>收藏原因</div>
-            <input value={f.note} onChange={e=>set("note",e.target.value)} placeholder="例：朋友推薦 / 七月要去" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
+            <input value={f.note} onChange={e=>set("note",e.target.value)} placeholder="" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
         </div>
 
@@ -1266,7 +1266,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp }) {
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>推薦品項</div>
             <textarea value={f.recommendations as string}
               onChange={e=>set("recommendations", e.target.value)}
-              placeholder={"例：鮭魚拼盤：肉質鮮美\n義大利麵：蛤蜊口味"}
+              placeholder=""
               rows={3}
               style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6 }} />
           </div>
@@ -1541,13 +1541,13 @@ function Search({ places, onBack, onSelect }) {
 }
 
 // ── Notes ─────────────────────────────────────────────────────────────────────
-function Notes({ onBack, countries }) {
+function Notes({ onBack, countries, noteCats, onUpdateNoteCats }) {
   const [country,setCountry]=useState(countries[0]||"韓國");
   const [notes,setNotes]=useState<any[]>([]);
   const [loading,setLoading]=useState(true);
-  const [cats,setCats]=useState(["入境","交通","退稅","禮儀","緊急聯絡","其他"]);
+  const [cats,setCats]=useState<string[]>(noteCats||["入境","交通","退稅","禮儀","緊急聯絡","其他"]);
   const [adding,setAdding]=useState(false);
-  const [newCat,setNewCat]=useState("入境");
+  const [newCat,setNewCat]=useState(noteCats?.[0]||"入境");
   const [newContent,setNewContent]=useState("");
   const [newPhotos,setNewPhotos]=useState<string[]>([]);
   const [editingNote,setEditingNote]=useState<any>(null);
@@ -1614,7 +1614,12 @@ function Notes({ onBack, countries }) {
 
   function addCat() {
     const c=newCatInput.trim();
-    if(c&&!cats.includes(c)){ setCats(prev=>[...prev,c]); setNewCat(c); }
+    if(c&&!cats.includes(c)){
+      const newCats=[...cats,c];
+      setCats(newCats);
+      setNewCat(c);
+      if(onUpdateNoteCats) onUpdateNoteCats(newCats);
+    }
     setNewCatInput(""); setShowCatInput(false);
   }
 
@@ -1783,6 +1788,7 @@ export default function App() {
   const [countries,setCountries]=useState(Object.keys(GEO));
   const [countryOrder,setCountryOrder]=useState(Object.keys(GEO));
   const [types,setTypes]=useState(INIT_TYPES);
+  const [noteCats,setNoteCats]=useState(["入境","交通","退稅","禮儀","緊急聯絡","其他"]);
   const [geoData,setGeoData]=useState(GEO);
   const [history,setHistory]=useState(["home"]);
   const [selected,setSelected]=useState<any>(null);
@@ -1792,16 +1798,82 @@ export default function App() {
   const touchStartY=useRef(0);
   const isSwiping=useRef(false);
 
-  // ── 載入資料 ──
+  // ── 載入所有資料 ──
   useEffect(()=>{
-    sb.from('places').select('*').order('created_at',{ascending:false})
-      .then(({data, error})=>{
-        if(data) setPlaces(data);
-        else setPlaces([]);
-        setLoading(false);
-      })
-      .catch(()=>{ setPlaces([]); setLoading(false); });
+    Promise.all([
+      sb.from('places').select('*').order('created_at',{ascending:false}),
+      sb.from('user_settings').select('*').eq('id','default').single(),
+    ]).then(([placesRes, settingsRes])=>{
+      if(placesRes.data) setPlaces(placesRes.data);
+      if(settingsRes.data){
+        const s = settingsRes.data;
+        if(s.types?.length) setTypes(s.types);
+        if(s.country_order?.length) setCountryOrder(s.country_order);
+        if(s.note_cats?.length) setNoteCats(s.note_cats);
+        if(s.geo_data && Object.keys(s.geo_data).length){
+          // 把儲存的自訂商圈合併進 GEO
+          const merged = {...GEO};
+          for(const [country, cities] of Object.entries(s.geo_data as any)){
+            if(!merged[country]) merged[country] = {};
+            for(const [city, districts] of Object.entries(cities as any)){
+              if(!merged[country][city]) merged[country][city] = {};
+              for(const [dist, nbs] of Object.entries(districts as any)){
+                const existing = merged[country][city][dist] || [];
+                const extra = (nbs as string[]).filter((n:string)=>!existing.includes(n));
+                if(extra.length) merged[country][city][dist] = [...existing, ...extra];
+              }
+            }
+          }
+          setGeoData(merged);
+        }
+      }
+      setLoading(false);
+    }).catch(()=>setLoading(false));
   },[]);
+
+  // ── 儲存設定到 Supabase ──
+  async function saveSettings(patch: any){
+    await sb.from('user_settings').update(patch).eq('id','default');
+  }
+
+  async function handleUpdateTypes(newTypes: string[]){
+    setTypes(newTypes);
+    await saveSettings({types: newTypes});
+  }
+
+  async function handleUpdateOrder(newOrder: string[]){
+    setCountryOrder(newOrder);
+    await saveSettings({country_order: newOrder});
+  }
+
+  async function handleUpdateCountries(newCountries: string[]){
+    setCountries(newCountries);
+  }
+
+  // ── 自動新增商圈到 geoData + Supabase ──
+  async function autoAddNeighborhood(country:string, city:string, district:string, neighborhood:string){
+    if(!neighborhood.trim()) return;
+    const existing = ((geoData[country]||{})[city]||{})[district]||[];
+    if(existing.includes(neighborhood)) return;
+
+    const newGeo = {...geoData};
+    if(!newGeo[country]) newGeo[country]={};
+    if(!newGeo[country][city]) newGeo[country][city]={};
+    if(!newGeo[country][city][district]) newGeo[country][city][district]=[];
+    newGeo[country][city][district] = [...newGeo[country][city][district], neighborhood];
+    setGeoData(newGeo);
+
+    // 只存自訂新增的部分
+    const { data } = await sb.from('user_settings').select('geo_data').eq('id','default').single();
+    const saved = (data?.geo_data as any) || {};
+    if(!saved[country]) saved[country]={};
+    if(!saved[country][city]) saved[country][city]={};
+    if(!saved[country][city][district]) saved[country][city][district]=[];
+    if(!saved[country][city][district].includes(neighborhood)){
+      saved[country][city][district] = [...saved[country][city][district], neighborhood];
+      await saveSettings({geo_data: saved});
+    }
+  }
 
   const page = history[history.length-1];
 
@@ -1909,11 +1981,11 @@ export default function App() {
           WebkitOverflowScrolling:"touch",
           background:"#F5F0EB",
         }}>
-          {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} />}
+          {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} onAutoAddNb={autoAddNeighborhood} />}
           {page==="country"&&<CountryPage country={selectedCountry!} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
           {page==="search"&&<Search places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
-          {page==="notes"&&<Notes onBack={goBack} countries={countries} />}
-          {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} onBack={goBack} onUpdateCountries={setCountries} onUpdateTypes={setTypes} onUpdateOrder={setCountryOrder} onUpdateGeo={setGeoData} />}
+          {page==="notes"&&<Notes onBack={goBack} countries={countries} noteCats={noteCats} onUpdateNoteCats={async (cats:string[])=>{ setNoteCats(cats); await saveSettings({note_cats:cats}); }} />}
+          {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} onBack={goBack} onUpdateCountries={handleUpdateCountries} onUpdateTypes={handleUpdateTypes} onUpdateOrder={handleUpdateOrder} onUpdateGeo={setGeoData} />}
           {page==="detail"&&selected&&(
             <Detail place={selected} onBack={goBack} countries={countries} types={types}
               onStatusChange={handleStatusChange} onEdit={handleEdit} onDelete={handleDelete} />
