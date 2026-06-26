@@ -850,11 +850,14 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
             </div>
           </div>
         )}
+        {/* 所有收藏標題 */}
+        <div style={{ padding:"8px 20px 6px" }}>
+          <div style={{ fontSize:12, fontWeight:600, color:"#8E8E93" }}>所有收藏</div>
+        </div>
       </div>
 
       {/* 滾動區域 */}
-      <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"4px 20px 40px" }}>
-        <div style={{ fontSize:12, fontWeight:600, color:"#8E8E93", marginBottom:8 }}>所有收藏</div>
+      <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"0 20px 40px" }}>
         <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden" }}>
           {places.length===0 && <div style={{ padding:"30px 16px", textAlign:"center", color:"#8E8E93", fontSize:14 }}>還沒有收藏</div>}
           {places.map((p,i)=>(
