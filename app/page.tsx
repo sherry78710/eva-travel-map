@@ -1655,8 +1655,10 @@ function Notes({ onBack, countries }) {
       {lightbox && (
         <div
           onClick={()=>setLightbox(null)}
-          onTouchStart={e=>{ lightboxStartX.current=e.touches[0].clientX; }}
+          onTouchStart={e=>{ e.stopPropagation(); lightboxStartX.current=e.touches[0].clientX; }}
+          onTouchMove={e=>e.stopPropagation()}
           onTouchEnd={e=>{
+            e.stopPropagation();
             const dx=e.changedTouches[0].clientX-lightboxStartX.current;
             if(Math.abs(dx)>50){
               const newIdx=dx<0
