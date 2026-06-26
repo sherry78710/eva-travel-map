@@ -821,7 +821,7 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
   const orderedActive = countryOrder.filter(c=>byCountry[c]);
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", height:"100%", background:"#F5F0EB" }}>
+    <div style={{ display:"flex", flexDirection:"column", width:"100%", height:"100%", background:"#F5F0EB" }}>
       {/* 固定頂部 */}
       <div style={{ flexShrink:0, background:"#F5F0EB", paddingTop:"env(safe-area-inset-top)" }}>
         {/* 按鈕列 — 白底卡片 */}
@@ -1588,7 +1588,7 @@ export default function App() {
 
   return (
     <div onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
-      style={{width:"100vw",fontFamily:"-apple-system,'SF Pro Text',sans-serif",background:"#F5F0EB",position:"fixed",top:0,left:0,right:0,bottom:0,overflow:"hidden"}}>
+      style={{width:"100vw",height:"100dvh",fontFamily:"-apple-system,'SF Pro Text',sans-serif",background:"#F5F0EB",position:"fixed",top:0,left:0,right:0,bottom:0,overflow:"hidden"}}>
       <style>{`
         @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
         *{box-sizing:border-box;margin:0;padding:0}
@@ -1600,7 +1600,7 @@ export default function App() {
       `}</style>
 
       {/* 底層：Home 永遠存在 */}
-      <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch"}}>
+      <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",flexDirection:"column"}}>
         <Home places={places} countries={countries} countryOrder={countryOrder} onNav={nav} onCountry={c=>{setSelectedCountry(c);setHistory(h=>[...h,"country"]);}} />
       </div>
 
