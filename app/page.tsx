@@ -1238,12 +1238,14 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
   }
 
   return (
-    <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
-      <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 16px)", paddingBottom:"16px", paddingLeft:"20px", paddingRight:"20px", display:"flex", alignItems:"flex-end", justifyContent:"space-between" }}>
+    <div style={{ display:"flex", flexDirection:"column", width:"100%", height:"100%", background:"#F5F0EB" }}>
+      {/* 固定頂部 */}
+      <div style={{ flexShrink:0, background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 12px)", paddingBottom:"12px", paddingLeft:"20px", paddingRight:"20px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
         <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0 }}>‹ 返回</button>
         <button onClick={()=>setEditing(true)} style={{ background:"none", border:"none", color:"#007AFF", fontSize:15, fontWeight:600, cursor:"pointer", padding:0 }}>編輯</button>
       </div>
-      <div style={{ padding:"16px 20px 40px" }}>
+      {/* 滾動區域 */}
+      <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"16px 20px 40px" }}>
         <div style={{ marginBottom:16 }}>
           <div style={{ fontSize:26, fontWeight:700, color:"#000", letterSpacing:-0.5, marginBottom:4 }}>{place.name}</div>
           <div style={{ fontSize:13, color:"#8E8E93" }}>{[place.country,place.city,place.district,place.neighborhood].filter(Boolean).join(" · ")}</div>
