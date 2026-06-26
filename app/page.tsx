@@ -2,6 +2,26 @@
 import { useState, useRef, useEffect } from "react";
 import { createClient } from '@supabase/supabase-js';
 
+// ── 壓縮圖片：最大寬度 1200px，品質 75% ─────────────────────────────────────
+async function compressImage(file: File): Promise<Blob> {
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const maxW = 1200;
+      let w = img.width, h = img.height;
+      if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(blob => resolve(blob || file), 'image/jpeg', 0.75);
+    };
+    img.src = url;
+  });
+}
+
 // ── Supabase client ───────────────────────────────────────────────────────────
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -1094,9 +1114,9 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp }) {
   async function handlePhotoAdd(e:any) {
     const files = Array.from(e.target.files||[]);
     for(const file of files as File[]){
-      const ext = (file as File).name.split('.').pop() || 'jpg';
-      const path = `places/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error } = await sb.storage.from('photos').upload(path, file as File, { upsert: true });
+      const compressed = await compressImage(file);
+      const path = `places/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+      const { error } = await sb.storage.from('photos').upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
       if(!error){
         const { data } = sb.storage.from('photos').getPublicUrl(path);
         setF((x:any) => ({ ...x, photos: [...(x.photos||[]), data.publicUrl] }));
@@ -1339,9 +1359,9 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
                 const files = Array.from(e.target.files||[]);
                 const urls:string[] = [];
                 for(const file of files as File[]){
-                  const ext = file.name.split('.').pop() || 'jpg';
-                  const path = `places/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-                  const { error } = await sb.storage.from('photos').upload(path, file, { upsert: true });
+                  const compressed = await compressImage(file);
+                  const path = `places/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+                  const { error } = await sb.storage.from('photos').upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
                   if(!error){
                     const { data } = sb.storage.from('photos').getPublicUrl(path);
                     urls.push(data.publicUrl);
@@ -1461,15 +1481,17 @@ function Notes({ onBack, countries }) {
 
   async function handlePhotoAdd(e:any, setter:any) {
     const files=Array.from(e.target.files||[]);
+    const urls:string[]=[];
     for(const file of files as File[]){
-      const ext = file.name.split('.').pop() || 'jpg';
-      const path = `notes/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error } = await sb.storage.from('photos').upload(path, file, { upsert: true });
+      const compressed = await compressImage(file);
+      const path = `notes/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+      const { error } = await sb.storage.from('photos').upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
       if(!error){
         const { data } = sb.storage.from('photos').getPublicUrl(path);
-        setter((prev:any)=>[...prev, data.publicUrl]);
+        urls.push(data.publicUrl);
       }
     }
+    if(urls.length>0) setter(urls);
     e.target.value="";
   }
 
@@ -1555,7 +1577,7 @@ function Notes({ onBack, countries }) {
                 <span style={{fontSize:20}}>+</span>
                 <span style={{fontSize:9}}>加照片</span>
               </button>
-              <input ref={photoInputRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>handlePhotoAdd(e,setNewPhotos)} />
+              <input ref={photoInputRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>handlePhotoAdd(e,(urls:string[])=>setNewPhotos(prev=>[...prev,...urls]))} />
             </div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={()=>setAdding(false)} style={{flex:1,padding:11,border:"none",borderRadius:12,background:"#F5F0EB",color:"#3C3C43",fontSize:14,cursor:"pointer"}}>取消</button>
@@ -1587,7 +1609,7 @@ function Notes({ onBack, countries }) {
                   <span style={{fontSize:20}}>+</span>
                   <span style={{fontSize:9}}>加照片</span>
                 </button>
-                <input ref={editPhotoInputRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>handlePhotoAdd(e,(photos:string[])=>setEditingNote((n:any)=>({...n,photos:[...(n.photos||[]),...photos]})))} />
+                <input ref={editPhotoInputRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>handlePhotoAdd(e,(urls:string[])=>setEditingNote((n:any)=>({...n,photos:[...(n.photos||[]),...urls]})))} />
               </div>
               <div style={{display:"flex",gap:8}}>
                 <button onClick={()=>setEditingNote(null)} style={{flex:1,padding:12,border:"none",borderRadius:12,background:"#F5F0EB",color:"#3C3C43",fontSize:14,cursor:"pointer"}}>取消</button>
