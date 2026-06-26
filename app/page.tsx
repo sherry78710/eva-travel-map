@@ -1459,7 +1459,7 @@ function Notes({ onBack, countries }) {
   }
 
   async function handleSave() {
-    if(!newContent.trim()) return;
+    if(!newContent.trim() && newPhotos.length===0) return;
     const payload={country, category:newCat, content:newContent.trim(), photos:newPhotos};
     const {data,error}=await sb.from('country_notes').insert([payload]).select().single();
     if(!error&&data){ setNotes(ns=>[data,...ns]); }
