@@ -1091,13 +1091,17 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp }) {
     }
   }
 
-  function handlePhotoAdd(e) {
+  async function handlePhotoAdd(e:any) {
     const files = Array.from(e.target.files||[]);
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => setF(x => ({ ...x, photos: [...(x.photos||[]), ev.target.result] }));
-      reader.readAsDataURL(file);
-    });
+    for(const file of files as File[]){
+      const ext = (file as File).name.split('.').pop() || 'jpg';
+      const path = `places/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error } = await sb.storage.from('photos').upload(path, file as File, { upsert: true });
+      if(!error){
+        const { data } = sb.storage.from('photos').getPublicUrl(path);
+        setF((x:any) => ({ ...x, photos: [...(x.photos||[]), data.publicUrl] }));
+      }
+    }
     e.target.value = "";
   }
 
@@ -1331,15 +1335,19 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
             <label style={{ flexShrink:0, width:120, height:120, borderRadius:10, background:"#F5F0EB", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", cursor:"pointer", gap:4 }}>
               <span style={{ fontSize:28, color:"#C7C7CC" }}>+</span>
               <span style={{ fontSize:11, color:"#8E8E93" }}>新增照片</span>
-              <input type="file" accept="image/*" multiple style={{ display:"none" }} onChange={e => {
+              <input type="file" accept="image/*" multiple style={{ display:"none" }} onChange={async e => {
                 const files = Array.from(e.target.files||[]);
-                files.forEach(file => {
-                  const reader = new FileReader();
-                  reader.onload = ev => {
-                    onEdit({...place, photos:[...(place.photos||[]), ev.target.result]});
-                  };
-                  reader.readAsDataURL(file);
-                });
+                const urls:string[] = [];
+                for(const file of files as File[]){
+                  const ext = file.name.split('.').pop() || 'jpg';
+                  const path = `places/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+                  const { error } = await sb.storage.from('photos').upload(path, file, { upsert: true });
+                  if(!error){
+                    const { data } = sb.storage.from('photos').getPublicUrl(path);
+                    urls.push(data.publicUrl);
+                  }
+                }
+                if(urls.length>0) onEdit({...place, photos:[...(place.photos||[]), ...urls]});
               }} />
             </label>
           </div>
@@ -1451,13 +1459,17 @@ function Notes({ onBack, countries }) {
   const grouped:any={};
   filtered.forEach(n=>{ if(!grouped[n.category]) grouped[n.category]=[]; grouped[n.category].push(n); });
 
-  function handlePhotoAdd(e:any, setter:any) {
+  async function handlePhotoAdd(e:any, setter:any) {
     const files=Array.from(e.target.files||[]);
-    files.forEach((file:any)=>{
-      const reader=new FileReader();
-      reader.onload=ev=>setter((prev:any)=>[...prev, ev.target?.result as string]);
-      reader.readAsDataURL(file);
-    });
+    for(const file of files as File[]){
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `notes/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error } = await sb.storage.from('photos').upload(path, file, { upsert: true });
+      if(!error){
+        const { data } = sb.storage.from('photos').getPublicUrl(path);
+        setter((prev:any)=>[...prev, data.publicUrl]);
+      }
+    }
     e.target.value="";
   }
 
