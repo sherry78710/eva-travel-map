@@ -1153,7 +1153,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp }) {
   const firstCity = getCities(firstC)[0]||"";
   const firstDist = getDistricts(firstC,firstCity)[0]||"";
   const firstNb = getNeighborhoods(firstC,firstCity,firstDist)[0]||"";
-  const [f,setF] = useState({ name:"",country:firstC,city:firstCity,district:firstDist,neighborhood:firstNb,types:[],note:"",address:"",recommendations:[],source_url:"",rating:0,review:"",photos:[] });
+  const [f,setF] = useState({ name:"",country:firstC,city:firstCity,district:firstDist,neighborhood:firstNb,types:[],note:"",address:"",recommendations:"",source_url:"",rating:0,review:"",photos:[] });
   const [saving,setSaving] = useState(false);
   const photoInputRef = useRef(null);
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
@@ -1262,16 +1262,24 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp }) {
         </div>
 
         <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden" }}>
-          {[["推薦品項","recommendations"],["地址","address"],["來源連結","source_url"]].map(([label,key],i,arr)=>(
-            <div key={key} style={{ padding:"14px 16px", borderBottom:i<arr.length-1?"1px solid #EDE8E2":"none" }}>
-              <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>
-                {label}{key==="address" && <span style={{ color:"#C7C7CC", fontWeight:400 }}> · 貼上可自動帶入位置</span>}
-              </div>
-              <input value={key==="recommendations"?f[key].join("、"):f[key]}
-                onChange={e => key==="address" ? handleAddressChange(e.target.value) : set(key,key==="recommendations"?e.target.value.split(/[、,，]/).map(s=>s.trim()).filter(Boolean):e.target.value)}
-                style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
-            </div>
-          ))}
+          <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>推薦品項</div>
+            <textarea value={f.recommendations as string}
+              onChange={e=>set("recommendations", e.target.value)}
+              placeholder={"例：鮭魚拼盤：肉質鮮美\n義大利麵：蛤蜊口味"}
+              rows={3}
+              style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6 }} />
+          </div>
+          <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地址 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 貼上可自動帶入位置</span></div>
+            <input value={f.address} onChange={e=>handleAddressChange(e.target.value)}
+              style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
+          </div>
+          <div style={{ padding:"14px 16px" }}>
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>來源連結</div>
+            <input value={f.source_url} onChange={e=>set("source_url", e.target.value)}
+              style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
+          </div>
         </div>
       </div>
     </div>
@@ -1316,11 +1324,18 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
           </div>
 
           <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
-            {[["推薦品項","recommendations"],["地址","address"],["來源連結","source_url"]].map(([label,key],i,arr)=>(
+            <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
+              <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>推薦品項</div>
+              <textarea value={typeof f.recommendations === 'string' ? f.recommendations : (f.recommendations||[]).join('\n')}
+                onChange={e=>setF((x:any)=>({...x,recommendations:e.target.value}))}
+                rows={3}
+                style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6 }} />
+            </div>
+            {[["地址","address"],["來源連結","source_url"]].map(([label,key],i,arr)=>(
               <div key={key} style={{ padding:"14px 16px", borderBottom:i<arr.length-1?"1px solid #EDE8E2":"none" }}>
                 <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>{label}</div>
-                <input value={key==="recommendations"?(f[key]||[]).join("、"):f[key]||""}
-                  onChange={e=>setF(x=>({...x,[key]:key==="recommendations"?e.target.value.split(/[、,，]/).map(s=>s.trim()).filter(Boolean):e.target.value}))}
+                <input value={(f as any)[key]||""}
+                  onChange={e=>setF((x:any)=>({...x,[key]:e.target.value}))}
                   style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
               </div>
             ))}
@@ -1381,11 +1396,11 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
 
         <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
           {place.types?.length>0 && <DRow label="類型" value={place.types.join("・")} />}
-          {place.recommendations?.length>0 && (
+          {place.recommendations && (typeof place.recommendations === 'string' ? place.recommendations : (place.recommendations as string[]).join('\n')).trim().length>0 && (
             <div style={{ padding:"14px 16px" }}>
               <div style={{ fontSize:13, color:"#8E8E93", marginBottom:8 }}>推薦品項</div>
-              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                {place.recommendations.map(r=><span key={r} style={{ fontSize:13, background:"#F5F0EB", borderRadius:8, padding:"4px 12px", color:"#3C3C43" }}>{r}</span>)}
+              <div style={{ fontSize:15, color:"#000", lineHeight:1.7, whiteSpace:"pre-line" }}>
+                {typeof place.recommendations === 'string' ? place.recommendations : (place.recommendations as string[]).join('\n')}
               </div>
             </div>
           )}
@@ -1803,7 +1818,7 @@ export default function App() {
       district:p.district||'', neighborhood:p.neighborhood||'',
       types:p.types||[], status:'wishlist',
       note:p.note||'', address:p.address||'',
-      recommendations:p.recommendations||[],
+      recommendations: typeof p.recommendations === 'string' ? p.recommendations : (p.recommendations||[]).join('\n'),
       source_url:p.source_url||'',
       rating:0, review:'', photos:p.photos||[],
       summary:'', tags:[],
