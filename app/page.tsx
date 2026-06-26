@@ -1583,9 +1583,9 @@ export default function App() {
 
   return (
     <div onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
-      style={{width:"100vw",fontFamily:"-apple-system,'SF Pro Text',sans-serif",background:"#F5F0EB",minHeight:"100dvh",position:"fixed",top:0,left:0,right:0,bottom:0,overflow:"hidden"}}>
+      style={{width:"100vw",fontFamily:"-apple-system,'SF Pro Text',sans-serif",background:"#F5F0EB",position:"fixed",top:0,left:0,right:0,bottom:0,overflow:"hidden"}}>
       <style>{`
-        @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
         *{box-sizing:border-box;margin:0;padding:0}
         html,body{width:100%;height:100%;overflow:hidden;overscroll-behavior:none;-webkit-overflow-scrolling:touch}
         ::-webkit-scrollbar{display:none}
@@ -1594,25 +1594,36 @@ export default function App() {
         select{-webkit-appearance:none;appearance:none}
       `}</style>
 
-      <div style={{
-        position:"absolute", top:0, left:0, right:0, bottom:0,
-        transform:slideX>0?`translateX(${slideX}px)`:"translateX(0)",
-        transition:slideX===0?"transform 0.35s cubic-bezier(0.4,0,0.2,1)":"none",
-        willChange:"transform",
-        overflowY:"auto", overflowX:"hidden",
-        WebkitOverflowScrolling:"touch",
-      }}>
-        {page==="home"&&<Home places={places} countries={countries} countryOrder={countryOrder} onNav={nav} onCountry={c=>{setSelectedCountry(c);setHistory(h=>[...h,"country"]);}} />}
-        {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} />}
-        {page==="country"&&<CountryPage country={selectedCountry!} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
-        {page==="search"&&<Search places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
-        {page==="notes"&&<Notes onBack={goBack} countries={countries} />}
-        {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} onBack={goBack} onUpdateCountries={setCountries} onUpdateTypes={setTypes} onUpdateOrder={setCountryOrder} onUpdateGeo={setGeoData} />}
-        {page==="detail"&&selected&&(
-          <Detail place={selected} onBack={goBack} countries={countries} types={types}
-            onStatusChange={handleStatusChange} onEdit={handleEdit} onDelete={handleDelete} />
-        )}
+      {/* 底層：Home 永遠存在 */}
+      <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,overflowY:"auto",overflowX:"hidden",WebkitOverflowScrolling:"touch"}}>
+        <Home places={places} countries={countries} countryOrder={countryOrder} onNav={nav} onCountry={c=>{setSelectedCountry(c);setHistory(h=>[...h,"country"]);}} />
       </div>
+
+      {/* 上層頁面：疊在 Home 上面，右滑時往右移動 */}
+      {page!=="home" && (
+        <div style={{
+          position:"absolute", top:0, left:0, right:0, bottom:0,
+          transform:slideX>0?`translateX(${slideX}px)`:"translateX(0)",
+          transition:slideX===0?"transform 0.35s cubic-bezier(0.4,0,0.2,1)":"none",
+          willChange:"transform",
+          overflowY:"auto", overflowX:"hidden",
+          WebkitOverflowScrolling:"touch",
+          background:"#F5F0EB",
+          animation:"slideIn 0.3s cubic-bezier(0.4,0,0.2,1)",
+        }}>
+          {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} />}
+          {page==="country"&&<CountryPage country={selectedCountry!} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
+          {page==="search"&&<Search places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
+          {page==="notes"&&<Notes onBack={goBack} countries={countries} />}
+          {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} onBack={goBack} onUpdateCountries={setCountries} onUpdateTypes={setTypes} onUpdateOrder={setCountryOrder} onUpdateGeo={setGeoData} />}
+          {page==="detail"&&selected&&(
+            <Detail place={selected} onBack={goBack} countries={countries} types={types}
+              onStatusChange={handleStatusChange} onEdit={handleEdit} onDelete={handleDelete} />
+          )}
+        </div>
+      )}
     </div>
+  );
+}
   );
 }
