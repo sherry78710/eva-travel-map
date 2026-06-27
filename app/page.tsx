@@ -2109,7 +2109,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
     if (!f.name.trim() || saving) return;
     setSaving(true);
     // 自動新增商圈（如果清單裡沒有）
-    if(f.neighborhood && f.country && f.city && f.district && onAutoAddNb){
+    if(f.country && f.city && (f.district || f.neighborhood) && onAutoAddNb){
       onAutoAddNb(f.country, f.city, f.district, f.neighborhood);
     }
     onAdd({...f, id:String(Date.now()), status:"wishlist"});
@@ -2740,7 +2740,7 @@ export default function App() {
               for(const [dist, nbs] of Object.entries(districts as any)){
                 const existing = merged[country][city][dist] || [];
                 const extra = (nbs as string[]).filter((n:string)=>!existing.includes(n));
-                if(extra.length) merged[country][city][dist] = [...existing, ...extra];
+                merged[country][city][dist] = [...existing, ...extra];
               }
             }
           }
@@ -2770,29 +2770,26 @@ export default function App() {
     setCountries(newCountries);
   }
 
-  // ── 自動新增商圈到 geoData + Supabase ──
-  async function autoAddNeighborhood(country:string, city:string, district:string, neighborhood:string){
-    if(!neighborhood.trim()) return;
-    const existing = ((geoData[country]||{})[city]||{})[district]||[];
-    if(existing.includes(neighborhood)) return;
+  // ── 設定頁的城市/行政區/商圈變更：存進 Supabase ──
+  async function handleUpdateGeo(newGeo: any){
+    setGeoData(newGeo);
+    await saveSettings({geo_data: newGeo});
+  }
 
-    const newGeo = {...geoData};
+  // ── 地址帶出新的行政區/商圈時，自動加入 geoData 並存進 Supabase ──
+  async function autoAddNeighborhood(country:string, city:string, district:string, neighborhood:string){
+    if(!country || !city) return;
+    const dist = (district||'').trim() || '其他';
+    const nb = (neighborhood||'').trim();
+    const newGeo:any = JSON.parse(JSON.stringify(geoData));
     if(!newGeo[country]) newGeo[country]={};
     if(!newGeo[country][city]) newGeo[country][city]={};
-    if(!newGeo[country][city][district]) newGeo[country][city][district]=[];
-    newGeo[country][city][district] = [...newGeo[country][city][district], neighborhood];
-    setGeoData(newGeo);
-
-    // 只存自訂新增的部分
-    const { data } = await sb.from('user_settings').select('geo_data').eq('id','default').single();
-    const saved = (data?.geo_data as any) || {};
-    if(!saved[country]) saved[country]={};
-    if(!saved[country][city]) saved[country][city]={};
-    if(!saved[country][city][district]) saved[country][city][district]=[];
-    if(!saved[country][city][district].includes(neighborhood)){
-      saved[country][city][district] = [...saved[country][city][district], neighborhood];
-      await saveSettings({geo_data: saved});
+    if(!newGeo[country][city][dist]) newGeo[country][city][dist]=[];
+    if(nb && !newGeo[country][city][dist].includes(nb)){
+      newGeo[country][city][dist] = [...newGeo[country][city][dist], nb];
     }
+    setGeoData(newGeo);
+    await saveSettings({geo_data: newGeo});
   }
 
   const page = history[history.length-1];
@@ -2810,7 +2807,7 @@ export default function App() {
       district:p.district||'', neighborhood:p.neighborhood||'',
       types:p.types||[], status:'wishlist',
       note:p.note||'', address:p.address||'',
-      recommendations: typeof p.recommendations === 'string' ? p.recommendations : (p.recommendations||[]).join('\n'),
+      recommendations: (typeof p.recommendations === 'string' ? p.recommendations.split('\n') : (p.recommendations||[])).map((s:string)=>s.trim()).filter(Boolean),
       source_url:p.source_url||'',
       rating:0, review:'', photos:p.photos||[],
       summary:'', tags:[],
@@ -2833,7 +2830,7 @@ export default function App() {
       name:u.name, country:u.country, city:u.city,
       district:u.district||'', neighborhood:u.neighborhood,
       types:u.types||[], note:u.note||'', address:u.address||'',
-      recommendations: typeof u.recommendations === 'string' ? u.recommendations : (u.recommendations||[]).join('\n'), source_url:u.source_url||'',
+      recommendations: (typeof u.recommendations === 'string' ? u.recommendations.split('\n') : (u.recommendations||[])).map((s:string)=>s.trim()).filter(Boolean), source_url:u.source_url||'',
       rating:u.rating||0, review:u.review||'', photos:u.photos||[],
       status:u.status, summary:u.summary||'', tags:u.tags||[],
     }).eq('id',u.id);
@@ -2905,7 +2902,7 @@ export default function App() {
           {page==="country"&&<CountryPage country={selectedCountry!} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
           {page==="search"&&<Search places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
           {page==="notes"&&<Notes onBack={goBack} countries={countries} noteCats={noteCats} onUpdateNoteCats={async (cats:string[])=>{ setNoteCats(cats); await saveSettings({note_cats:cats}); }} />}
-          {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} onBack={goBack} onUpdateCountries={handleUpdateCountries} onUpdateTypes={handleUpdateTypes} onUpdateOrder={handleUpdateOrder} onUpdateGeo={setGeoData} />}
+          {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} onBack={goBack} onUpdateCountries={handleUpdateCountries} onUpdateTypes={handleUpdateTypes} onUpdateOrder={handleUpdateOrder} onUpdateGeo={handleUpdateGeo} />}
           {page==="detail"&&selected&&(
             <Detail place={selected} onBack={goBack} countries={countries} types={types} geoData={geoData}
               onStatusChange={handleStatusChange} onEdit={handleEdit} onDelete={handleDelete} />
