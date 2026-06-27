@@ -2149,18 +2149,13 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
             <input value={f.name} onChange={e=>set("name",e.target.value)} placeholder="" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
           <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>收藏原因</div>
-            <input value={f.note} onChange={e=>set("note",e.target.value)} placeholder="" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
-          </div>
-          <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地址 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 貼上自動帶入位置</span></div>
-            <input value={f.address} onChange={e=>handleAddressChange(e.target.value)}
-              style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地圖搜尋名稱 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 當地語言・選填</span></div>
+            <input value={f.map_query} onChange={e=>set("map_query",e.target.value)} placeholder=""
+              style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
           <div style={{ padding:"14px 16px" }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地圖搜尋名稱 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 當地語言・選填</span></div>
-            <input value={f.map_query} onChange={e=>set("map_query",e.target.value)} placeholder="例：敘敘苑 시부야점（沒填就用上面的店名）"
-              style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>收藏原因</div>
+            <input value={f.note} onChange={e=>set("note",e.target.value)} placeholder="" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
         </div>
 
@@ -2187,6 +2182,14 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
         <LocationSelector country={f.country} city={f.city} district={f.district} neighborhood={f.neighborhood}
           countries={countries} geoData={geoDataProp||GEO}
           onChange={({country,city,district,neighborhood})=>setF(x=>({...x,country,city,district,neighborhood}))} />
+
+        <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
+          <div style={{ padding:"14px 16px" }}>
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地址 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 貼上自動帶入位置</span></div>
+            <input value={f.address} onChange={e=>handleAddressChange(e.target.value)}
+              style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
+          </div>
+        </div>
 
         <div style={{ background:"#FDF8F3", borderRadius:16, padding:16, marginBottom:12 }}>
           <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>類型</div>
@@ -2743,7 +2746,7 @@ export default function App() {
       sb.from('places').select('*').order('created_at',{ascending:false}),
       sb.from('user_settings').select('*').eq('id','default').single(),
     ]).then(([placesRes, settingsRes])=>{
-      if(placesRes.data) setPlaces(placesRes.data);
+      if(placesRes.data) setPlaces(placesRes.data.map((p:any)=>({...p, map_query: p.summary||''})));
       if(settingsRes.data){
         const s = settingsRes.data;
         if(s.types?.length) setTypes(s.types);
@@ -2828,14 +2831,13 @@ export default function App() {
       name:p.name, country:p.country, city:p.city||'',
       district:p.district||'', neighborhood:p.neighborhood||'',
       types:p.types||[], status:'wishlist',
-      note:p.note||'', address:p.address||'', map_query:p.map_query||'',
+      note:p.note||'', address:p.address||'',
       recommendations: (typeof p.recommendations === 'string' ? p.recommendations.split('\n') : (p.recommendations||[])).map((s:string)=>s.trim()).filter(Boolean),
       source_url:p.source_url||'',
-      rating:0, review:'', photos:p.photos||[],
-      summary:'', tags:[],
+      rating:0, review:'', summary:p.map_query||'', tags:[], photos:p.photos||[],
     };
     const {data,error}=await sb.from('places').insert([payload]).select().single();
-    if(!error&&data) setPlaces(ps=>[data,...ps]);
+    if(!error&&data) setPlaces(ps=>[{...data, map_query:data.summary||''},...ps]);
     else { console.error('handleAdd error:', error); alert('新增失敗：' + (error?.message || JSON.stringify(error))); }
   }
 
@@ -2851,10 +2853,10 @@ export default function App() {
     const {error}=await sb.from('places').update({
       name:u.name, country:u.country, city:u.city,
       district:u.district||'', neighborhood:u.neighborhood,
-      types:u.types||[], note:u.note||'', address:u.address||'', map_query:u.map_query||'',
+      types:u.types||[], note:u.note||'', address:u.address||'',
       recommendations: (typeof u.recommendations === 'string' ? u.recommendations.split('\n') : (u.recommendations||[])).map((s:string)=>s.trim()).filter(Boolean), source_url:u.source_url||'',
       rating:u.rating||0, review:u.review||'', photos:u.photos||[],
-      status:u.status, summary:u.summary||'', tags:u.tags||[],
+      status:u.status, summary:u.map_query||'', tags:u.tags||[],
     }).eq('id',u.id);
     if(!error){ setPlaces(ps=>ps.map(p=>p.id===u.id?u:p)); setSelected(u); }
     else { console.error('handleEdit error:', error); alert('儲存失敗：' + (error?.message || JSON.stringify(error))); }
