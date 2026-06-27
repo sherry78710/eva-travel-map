@@ -719,7 +719,6 @@ function LocationSelector({ country, city, district, neighborhood, countries, ge
           } placeholder="選填" style={{ ...sel, border:"none", outline:"none" }} />
         )}
       </Row>
-      </Row>
     </div>
   );
 }
