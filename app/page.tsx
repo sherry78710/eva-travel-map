@@ -646,7 +646,7 @@ function PlaceRow({ place, onClick }) {
       )}
       <div style={{ flex:1 }}>
         <div style={{ fontSize:15, fontWeight:600, color:"#000", marginBottom:2 }}>{place.name}</div>
-        <div style={{ fontSize:12, color:"#8E8E93" }}>{place.neighborhood} · {place.types[0]}</div>
+        <div style={{ fontSize:12, color:"#8E8E93" }}>{[place.district, place.neighborhood].filter(Boolean).join(" ")}{place.types?.[0] ? ` · ${place.types[0]}` : ""}</div>
         {place.note && <div style={{ fontSize:11, color:"#C7C7CC", marginTop:2, fontStyle:"italic" }}>{place.note}</div>}
         {place.rating > 0 && (
           <div style={{ fontSize:11, color:"#FF9500", marginTop:2 }}>{"\u2665".repeat(place.rating)}{"\u2661".repeat(5-place.rating)}</div>
@@ -663,61 +663,62 @@ function LocationSelector({ country, city, district, neighborhood, countries, ge
   const districts = getDistricts(country, city);
   const neighborhoods = getNeighborhoods(country, city, district);
 
-  const sel = { flex:1, border:"none", outline:"none", fontSize:15, color:"#3C3C43", background:"none", fontFamily:"inherit", appearance:"none", cursor:"pointer", textAlign:"right" };
+  const sel = { flex:1, border:"none", outline:"none", fontSize:15, color:"#3C3C43", background:"none", fontFamily:"inherit", appearance:"none", cursor:"pointer", textAlign:"right" as const };
 
   return (
     <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
-      {/* Country */}
+      {/* 國家 */}
       <Row label="國家">
         <select value={country} onChange={e => {
           const c = e.target.value;
-          const firstCity = getCities(c)[0]||"";
-          const firstDist = getDistricts(c, firstCity)[0]||"";
-          const firstNb = getNeighborhoods(c, firstCity, firstDist)[0]||"";
-          onChange({ country:c, city:firstCity, district:firstDist, neighborhood:firstNb });
+          onChange({ country:c, city:"", district:"", neighborhood:"" });
         }} style={sel}>
           <option value="">請選擇</option>
           {countries.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </Row>
-      {/* City */}
+      {/* 城市 */}
       <Row label="城市">
         {cities.length > 0 ? (
           <select value={city} onChange={e => {
-            const c = e.target.value;
-            const firstDist = getDistricts(country, c)[0]||"";
-            const firstNb = getNeighborhoods(country, c, firstDist)[0]||"";
-            onChange({ country, city:c, district:firstDist, neighborhood:firstNb });
+            onChange({ country, city:e.target.value, district:"", neighborhood:"" });
           }} style={sel}>
+            <option value="">請選擇</option>
             {cities.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         ) : (
           <input value={city} onChange={e=>onChange({country,city:e.target.value,district,neighborhood})} style={{ ...sel, border:"none", outline:"none" }} />
         )}
       </Row>
-      {/* Neighborhood — auto-fills district */}
-      <Row label="商圈">
+      {/* 行政區 */}
+      <Row label="行政區">
+        {districts.length > 0 ? (
+          <select value={district} onChange={e => {
+            onChange({ country, city, district:e.target.value, neighborhood:"" });
+          }} style={sel}>
+            <option value="">請選擇</option>
+            {districts.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+        ) : (
+          <input value={district} onChange={e=>onChange({country,city,district:e.target.value,neighborhood})}
+            style={{ ...sel, border:"none", outline:"none" }} />
+        )}
+      </Row>
+      {/* 商圈 — 可選可清空 */}
+      <Row label="商圈" last>
         {neighborhoods.length > 0 ? (
           <select value={neighborhood} onChange={e => {
-            const nb = e.target.value;
-            const auto = NB_TO_DISTRICT[nb] || district;
-            onChange({ country, city, district:auto, neighborhood:nb });
+            onChange({ country, city, district, neighborhood:e.target.value });
           }} style={sel}>
+            <option value="">不填</option>
             {neighborhoods.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         ) : (
-          <input value={neighborhood} onChange={e => {
-            const nb = e.target.value;
-            const auto = NB_TO_DISTRICT[nb] || district;
-            onChange({ country, city, district:auto, neighborhood:nb });
-          }} style={{ ...sel, border:"none", outline:"none" }} />
+          <input value={neighborhood} onChange={e =>
+            onChange({ country, city, district, neighborhood:e.target.value })
+          } placeholder="選填" style={{ ...sel, border:"none", outline:"none" }} />
         )}
       </Row>
-      {/* District — auto-filled, but editable */}
-      <Row label="行政區" last>
-        <input value={district} onChange={e=>onChange({country,city,district:e.target.value,neighborhood})}
-          style={{ ...sel, border:"none", outline:"none", color: NB_TO_DISTRICT[neighborhood] ? "#8E8E93" : "#3C3C43" }} />
-        {NB_TO_DISTRICT[neighborhood] && <span style={{ fontSize:10, color:"#C7C7CC", marginLeft:4 }}>自動</span>}
       </Row>
     </div>
   );
@@ -2131,9 +2132,14 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地點名稱</div>
             <input value={f.name} onChange={e=>set("name",e.target.value)} placeholder="" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
-          <div style={{ padding:"14px 16px" }}>
+          <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>收藏原因</div>
             <input value={f.note} onChange={e=>set("note",e.target.value)} placeholder="" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
+          </div>
+          <div style={{ padding:"14px 16px" }}>
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地址 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 貼上自動帶入位置</span></div>
+            <input value={f.address} onChange={e=>handleAddressChange(e.target.value)}
+              style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
         </div>
 
@@ -2176,11 +2182,6 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
               placeholder=""
               rows={3}
               style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6 }} />
-          </div>
-          <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地址 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 貼上可自動帶入位置</span></div>
-            <input value={f.address} onChange={e=>handleAddressChange(e.target.value)}
-              style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
           <div style={{ padding:"14px 16px" }}>
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>來源連結</div>
