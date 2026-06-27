@@ -659,9 +659,10 @@ function PlaceRow({ place, onClick }) {
 
 // ── Location Selector ─────────────────────────────────────────────────────────
 function LocationSelector({ country, city, district, neighborhood, countries, geoData, onChange }) {
-  const cities = getCities(country);
-  const districts = getDistricts(country, city);
-  const neighborhoods = getNeighborhoods(country, city, district);
+  const g = geoData || GEO;
+  const cities = Object.keys((g && g[country]) || {});
+  const districts = Object.keys((g && g[country] && g[country][city]) || {});
+  const neighborhoods = ((g && g[country] && g[country][city] && g[country][city][district]) || []);
 
   const sel: React.CSSProperties = { flex:1, border:"none", outline:"none", fontSize:15, color:"#3C3C43", background:"none", fontFamily:"inherit", appearance:"none", cursor:"pointer", textAlign:"right" };
 
@@ -2194,7 +2195,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
 }
 
 // ── Detail ────────────────────────────────────────────────────────────────────
-function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, types }) {
+function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, types, geoData }) {
   const [editing, setEditing] = useState(false);
   const [f, setF] = useState({...place});
   const q = encodeURIComponent(place.name+" "+(place.address||""));
@@ -2220,7 +2221,7 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
           </div>
 
           <LocationSelector country={f.country} city={f.city} district={f.district||""} neighborhood={f.neighborhood}
-            countries={countries} geoData={GEO}
+            countries={countries} geoData={geoData||GEO}
             onChange={({country,city,district,neighborhood})=>setF(x=>({...x,country,city,district,neighborhood}))} />
 
           <div style={{ background:"#FDF8F3", borderRadius:16, padding:16, marginBottom:12 }}>
@@ -2816,7 +2817,7 @@ export default function App() {
     };
     const {data,error}=await sb.from('places').insert([payload]).select().single();
     if(!error&&data) setPlaces(ps=>[data,...ps]);
-    else console.error('handleAdd error:', error);
+    else { console.error('handleAdd error:', error); alert('新增失敗：' + (error?.message || JSON.stringify(error))); }
   }
 
   // ── 改狀態 ──
@@ -2832,12 +2833,12 @@ export default function App() {
       name:u.name, country:u.country, city:u.city,
       district:u.district||'', neighborhood:u.neighborhood,
       types:u.types||[], note:u.note||'', address:u.address||'',
-      recommendations:u.recommendations||[], source_url:u.source_url||'',
+      recommendations: typeof u.recommendations === 'string' ? u.recommendations : (u.recommendations||[]).join('\n'), source_url:u.source_url||'',
       rating:u.rating||0, review:u.review||'', photos:u.photos||[],
       status:u.status, summary:u.summary||'', tags:u.tags||[],
     }).eq('id',u.id);
     if(!error){ setPlaces(ps=>ps.map(p=>p.id===u.id?u:p)); setSelected(u); }
-    else console.error('handleEdit error:', error);
+    else { console.error('handleEdit error:', error); alert('儲存失敗：' + (error?.message || JSON.stringify(error))); }
   }
 
   // ── 刪除 ──
@@ -2906,7 +2907,7 @@ export default function App() {
           {page==="notes"&&<Notes onBack={goBack} countries={countries} noteCats={noteCats} onUpdateNoteCats={async (cats:string[])=>{ setNoteCats(cats); await saveSettings({note_cats:cats}); }} />}
           {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} onBack={goBack} onUpdateCountries={handleUpdateCountries} onUpdateTypes={handleUpdateTypes} onUpdateOrder={handleUpdateOrder} onUpdateGeo={setGeoData} />}
           {page==="detail"&&selected&&(
-            <Detail place={selected} onBack={goBack} countries={countries} types={types}
+            <Detail place={selected} onBack={goBack} countries={countries} types={types} geoData={geoData}
               onStatusChange={handleStatusChange} onEdit={handleEdit} onDelete={handleDelete} />
           )}
         </div>
