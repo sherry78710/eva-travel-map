@@ -1210,20 +1210,23 @@ function CountryPage({ country, places, onBack, onSelect }) {
   const [q, setQ] = useState("");
   const [collapsed, setCollapsed] = useState<any>({});
   const [filterStatus, setFilterStatus] = useState("");
+  const [filterCity, setFilterCity] = useState("");
   const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
 
-  const list = places.filter((p:any) => p.country === country);
+  const cities = ["全部", ...Array.from(new Set(places.filter((p:any)=>p.country===country).map((p:any)=>p.city).filter(Boolean)))];
+
 
   const filtered = list.filter((p:any) => {
     const lq = q.toLowerCase();
     const mQ = !q.trim() || [p.name, p.neighborhood, p.note||"", p.review||"", ...(p.recommendations||[]), ...(p.types||[])].some((s:string) => s.toLowerCase().includes(lq));
     const mS = !filterStatus || p.status === filterStatus;
-    return mQ && mS;
+    const mC = !filterCity || filterCity === "全部" || p.city === filterCity;
+    return mQ && mS && mC;
   });
 
   const grouped:any = {};
   filtered.forEach((p:any) => {
-    const key = p.neighborhood || "其他";
+    const key = p.neighborhood || p.district || "其他";
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(p);
   });
@@ -1241,7 +1244,7 @@ function CountryPage({ country, places, onBack, onSelect }) {
           <span style={{ fontSize:28 }}>{COUNTRY_FLAGS[country]||"🌍"}</span>
           <div>
             <div style={{ fontSize:22, fontWeight:700, color:"#000", letterSpacing:-0.5 }}>{country}</div>
-            <div style={{ fontSize:12, color:"#8E8E93" }}>{list.length} 個收藏 · {Object.keys(grouped).length} 個商圈</div>
+            <div style={{ fontSize:12, color:"#8E8E93" }}>{list.length} 個收藏 · {Object.keys(grouped).length} 個區域</div>
           </div>
         </div>
         {/* 狀態篩選 */}
@@ -1265,14 +1268,27 @@ function CountryPage({ country, places, onBack, onSelect }) {
             style={{ flex:1, border:"none", outline:"none", fontSize:15, background:"none", color:"#000", fontFamily:"inherit" }} />
           {(q||filterStatus) && <button onClick={()=>{setQ("");setFilterStatus("");}} style={{ background:"none", border:"none", color:"#8E8E93", fontSize:16, cursor:"pointer", padding:0 }}>✕</button>}
         </div>
-        {/* 切換按鈕 */}
-        <div style={{ display:"flex", justifyContent:"flex-end", gap:4 }}>
-          <button onClick={()=>setViewMode('list')} style={{ background:viewMode==='list'?"#3C3C3C":"none", border:"none", borderRadius:6, padding:"4px 7px", cursor:"pointer", display:"flex", alignItems:"center", gap:1.5, flexDirection:"column" }}>
-            {[0,1,2].map(i=><div key={i} style={{ width:12, height:2, background:viewMode==='list'?"white":"#8E8E93", borderRadius:1 }} />)}
-          </button>
-          <button onClick={()=>setViewMode('grid')} style={{ background:viewMode==='grid'?"#3C3C3C":"none", border:"none", borderRadius:6, padding:"4px 7px", cursor:"pointer", display:"grid", gridTemplateColumns:"1fr 1fr", gap:2 }}>
-            {[0,1,2,3].map(i=><div key={i} style={{ width:6, height:6, background:viewMode==='grid'?"white":"#8E8E93", borderRadius:1 }} />)}
-          </button>
+        {/* 城市篩選膠囊 + 切換按鈕 同一排 */}
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <div style={{ flex:1, overflowX:"auto", display:"flex", gap:6, scrollbarWidth:"none", WebkitOverflowScrolling:"touch" }}>
+            {cities.map(c => {
+              const active = c === "全部" ? !filterCity || filterCity === "全部" : filterCity === c;
+              return (
+                <button key={c} onClick={()=>setFilterCity(c==="全部"?"":c)}
+                  style={{ flexShrink:0, padding:"4px 12px", borderRadius:20, border:"none", fontSize:12, fontWeight:active?600:400, background:active?"#3C3C3C":"#EDE8E2", color:active?"white":"#3C3C43", cursor:"pointer", whiteSpace:"nowrap" }}>
+                  {c}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ display:"flex", gap:4, flexShrink:0 }}>
+            <button onClick={()=>setViewMode('list')} style={{ background:viewMode==='list'?"#3C3C3C":"none", border:"none", borderRadius:6, padding:"4px 7px", cursor:"pointer", display:"flex", alignItems:"center", gap:1.5, flexDirection:"column" }}>
+              {[0,1,2].map(i=><div key={i} style={{ width:12, height:2, background:viewMode==='list'?"white":"#8E8E93", borderRadius:1 }} />)}
+            </button>
+            <button onClick={()=>setViewMode('grid')} style={{ background:viewMode==='grid'?"#3C3C3C":"none", border:"none", borderRadius:6, padding:"4px 7px", cursor:"pointer", display:"grid", gridTemplateColumns:"1fr 1fr", gap:2 }}>
+              {[0,1,2,3].map(i=><div key={i} style={{ width:6, height:6, background:viewMode==='grid'?"white":"#8E8E93", borderRadius:1 }} />)}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1289,7 +1305,7 @@ function CountryPage({ country, places, onBack, onSelect }) {
               {/* 商圈標題 — 可收合 */}
               <button onClick={() => toggleCollapse(nb)} style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between", background:"none", border:"none", cursor:"pointer", padding:"0 0 8px 0", textAlign:"left" }}>
                 <div style={{ fontSize:12, fontWeight:600, color:"#8E8E93", letterSpacing:0.3 }}>
-                  {nb}{nbPlaces[0]?.district ? ` · ${nbPlaces[0].district}` : ""} <span style={{ fontWeight:400 }}>({nbPlaces.length})</span>
+                  {[...new Set([nbPlaces[0]?.city, nbPlaces[0]?.district, nbPlaces[0]?.neighborhood].filter(Boolean))].join(" · ") || "其他"} <span style={{ fontWeight:400 }}>({nbPlaces.length})</span>
                 </div>
                 <span style={{ fontSize:12, color:"#C7C7CC", transform:isCollapsed?"rotate(-90deg)":"rotate(0deg)", transition:"transform 0.2s" }}>▼</span>
               </button>
@@ -1974,6 +1990,14 @@ function parseAddressMultiCountry(addr: string): { country?:string; city?: strin
   if(base && base.country==="台灣" && !base.district){
     const m = addr.match(/(?:縣|市)([\u4e00-\u9fa5]{1,3}(?:區|鄉|鎮|市))/);
     if(m && m[1]) base.district = m[1];
+  }
+
+  // 日本／中國：行政區若沒帶到，用「市○○区 / 東京都○○区」規則自動補抓並轉成「區」
+  // 例：福岡県福岡市中央区 → 中央區、東京都渋谷区 → 渋谷區、上海市黃浦区 → 黃浦區
+  if(base && (base.country==="日本" || base.country==="中國") && !base.district){
+    let m = addr.match(/市([\u3400-\u9fff]{1,4}?区)/);
+    if(!m) m = addr.match(/東京都([\u3400-\u9fff]{1,4}?区)/);
+    if(m && m[1]) base.district = m[1].replace(/区/g, '區');
   }
 
   return base;
