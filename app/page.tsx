@@ -663,7 +663,7 @@ function LocationSelector({ country, city, district, neighborhood, countries, ge
   const districts = getDistricts(country, city);
   const neighborhoods = getNeighborhoods(country, city, district);
 
-  const sel = { flex:1, border:"none", outline:"none", fontSize:15, color:"#3C3C43", background:"none", fontFamily:"inherit", appearance:"none", cursor:"pointer", textAlign:"right" as const };
+  const sel: React.CSSProperties = { flex:1, border:"none", outline:"none", fontSize:15, color:"#3C3C43", background:"none", fontFamily:"inherit", appearance:"none", cursor:"pointer", textAlign:"right" };
 
   return (
     <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
