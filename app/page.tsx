@@ -660,9 +660,13 @@ function PlaceRow({ place, onClick }) {
 // ── Location Selector ─────────────────────────────────────────────────────────
 function LocationSelector({ country, city, district, neighborhood, countries, geoData, onChange }) {
   const g = geoData || GEO;
-  const cities = Object.keys((g && g[country]) || {});
-  const districts = Object.keys((g && g[country] && g[country][city]) || {});
-  const neighborhoods = ((g && g[country] && g[country][city] && g[country][city][district]) || []);
+  let cities = Object.keys((g && g[country]) || {});
+  let districts = Object.keys((g && g[country] && g[country][city]) || {});
+  let neighborhoods = ((g && g[country] && g[country][city] && g[country][city][district]) || []);
+  // 顯示目前的值，即使它還沒被加進清單（例如剛從地址解析帶入的新行政區）
+  if(city && !cities.includes(city)) cities = [city, ...cities];
+  if(district && !districts.includes(district)) districts = [district, ...districts];
+  if(neighborhood && !neighborhoods.includes(neighborhood)) neighborhoods = [neighborhood, ...neighborhoods];
 
   const sel: React.CSSProperties = { flex:1, border:"none", outline:"none", fontSize:15, color:"#3C3C43", background:"none", fontFamily:"inherit", appearance:"none", cursor:"pointer", textAlign:"right" };
 
@@ -1946,21 +1950,33 @@ function parseAddressMultiCountry(addr: string): { country?:string; city?: strin
   const lower = addr.toLowerCase();
   const sorted = [...ADDRESS_MAP].sort((a,b)=>b.key.length-a.key.length);
 
+  let base: { country?:string; city?: string; district?: string; neighborhood?: string } | null = null;
+
   // 第一輪：找有商圈的精確關鍵字（key本身就是商圈名稱）
   for(const item of sorted){
     if(item.neighborhood && lower.includes(item.key.toLowerCase())){
-      return { country:item.country, city:item.city, district:item.district, neighborhood:item.neighborhood };
+      base = { country:item.country, city:item.city, district:item.district, neighborhood:item.neighborhood };
+      break;
     }
   }
 
   // 第二輪：只找行政區層級（neighborhood為空的），商圈留空
-  for(const item of sorted){
-    if(!item.neighborhood && lower.includes(item.key.toLowerCase())){
-      return { country:item.country, city:item.city, district:item.district, neighborhood:"" };
+  if(!base){
+    for(const item of sorted){
+      if(!item.neighborhood && lower.includes(item.key.toLowerCase())){
+        base = { country:item.country, city:item.city, district:item.district, neighborhood:"" };
+        break;
+      }
     }
   }
 
-  return null;
+  // 台灣：行政區若沒帶到，用「縣/市 + 區/鄉/鎮/市」規則自動補抓（例：高雄市路竹區 → 路竹區）
+  if(base && base.country==="台灣" && !base.district){
+    const m = addr.match(/(?:縣|市)([\u4e00-\u9fa5]{1,3}(?:區|鄉|鎮|市))/);
+    if(m && m[1]) base.district = m[1];
+  }
+
+  return base;
 }
 
 const KR_KEYWORD_MAP = ADDRESS_MAP.filter(x=>x.country==="韓國");
@@ -2070,7 +2086,7 @@ function parseAddress(addr, geoData) {
 }
 
 function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb }) {
-  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",address:"",recommendations:"",source_url:"",rating:0,review:"",photos:[] });
+  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[] });
   const [saving,setSaving] = useState(false);
   const photoInputRef = useRef(null);
   const set=(k:string,v:any)=>setF((x:any)=>({...x,[k]:v}));
@@ -2136,9 +2152,14 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>收藏原因</div>
             <input value={f.note} onChange={e=>set("note",e.target.value)} placeholder="" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
-          <div style={{ padding:"14px 16px" }}>
+          <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地址 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 貼上自動帶入位置</span></div>
             <input value={f.address} onChange={e=>handleAddressChange(e.target.value)}
+              style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
+          </div>
+          <div style={{ padding:"14px 16px" }}>
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地圖搜尋名稱 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 當地語言・選填</span></div>
+            <input value={f.map_query} onChange={e=>set("map_query",e.target.value)} placeholder="例：敘敘苑 시부야점（沒填就用上面的店名）"
               style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
         </div>
@@ -2198,7 +2219,8 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
 function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, types, geoData }) {
   const [editing, setEditing] = useState(false);
   const [f, setF] = useState({...place});
-  const q = encodeURIComponent(place.name+" "+(place.address||""));
+  const searchName = (place.map_query && place.map_query.trim()) ? place.map_query.trim() : (place.name||"");
+  const q = encodeURIComponent([searchName, place.address].map((s:string)=>(s||"").trim()).filter(Boolean).join(" "));
 
   if (editing) {
     return (
@@ -2239,7 +2261,7 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
                 rows={3}
                 style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6 }} />
             </div>
-            {[["地址","address"],["來源連結","source_url"]].map(([label,key],i,arr)=>(
+            {[["地址","address"],["地圖搜尋名稱","map_query"],["來源連結","source_url"]].map(([label,key],i,arr)=>(
               <div key={key} style={{ padding:"14px 16px", borderBottom:i<arr.length-1?"1px solid #EDE8E2":"none" }}>
                 <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>{label}</div>
                 <input value={(f as any)[key]||""}
@@ -2806,7 +2828,7 @@ export default function App() {
       name:p.name, country:p.country, city:p.city||'',
       district:p.district||'', neighborhood:p.neighborhood||'',
       types:p.types||[], status:'wishlist',
-      note:p.note||'', address:p.address||'',
+      note:p.note||'', address:p.address||'', map_query:p.map_query||'',
       recommendations: (typeof p.recommendations === 'string' ? p.recommendations.split('\n') : (p.recommendations||[])).map((s:string)=>s.trim()).filter(Boolean),
       source_url:p.source_url||'',
       rating:0, review:'', photos:p.photos||[],
@@ -2829,7 +2851,7 @@ export default function App() {
     const {error}=await sb.from('places').update({
       name:u.name, country:u.country, city:u.city,
       district:u.district||'', neighborhood:u.neighborhood,
-      types:u.types||[], note:u.note||'', address:u.address||'',
+      types:u.types||[], note:u.note||'', address:u.address||'', map_query:u.map_query||'',
       recommendations: (typeof u.recommendations === 'string' ? u.recommendations.split('\n') : (u.recommendations||[])).map((s:string)=>s.trim()).filter(Boolean), source_url:u.source_url||'',
       rating:u.rating||0, review:u.review||'', photos:u.photos||[],
       status:u.status, summary:u.summary||'', tags:u.tags||[],
