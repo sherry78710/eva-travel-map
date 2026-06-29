@@ -2262,7 +2262,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
           </div>
           <div style={{ padding:"14px 16px" }}>
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>營業時間 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 選填</span></div>
-            <input value={f.opening_hours} onChange={e=>set("opening_hours",e.target.value)} placeholder="例：週一至週五 11:30–21:00" style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
+            <textarea value={f.opening_hours} onChange={e=>set("opening_hours",e.target.value)} placeholder={"例：週一至週六 11:30–21:00\n週日公休"} rows={3} style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6 }} />
           </div>
         </div>
 
@@ -2353,7 +2353,7 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
           <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
             <div style={{ padding:"14px 16px" }}>
               <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>營業時間 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 選填</span></div>
-              <input value={(f as any).opening_hours||""} onChange={e=>setF((x:any)=>({...x,opening_hours:e.target.value}))} placeholder="例：週一至週五 11:30–21:00" style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
+              <textarea value={(f as any).opening_hours||""} onChange={e=>setF((x:any)=>({...x,opening_hours:e.target.value}))} placeholder={"例：週一至週六 11:30–21:00\n週日公休"} rows={3} style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6 }} />
             </div>
           </div>
 
