@@ -637,100 +637,24 @@ function checkTodayClosed(opening_hours: string): 'closed'|'uncertain'|null {
   if (/全年無休|每天營業|無休|7天|天天/.test(text)) return null;
   if (/隔週|每隔|每月第|不定期|隔周/.test(text)) return 'uncertain';
 
-  // 只認真正的公休關鍵字（排除「休息時段」）
-  const hasClosedKw = /公休|定休|closed|休館|休業/.test(text);
-  const hasKrJp = /휴무|휴일|曜定休|曜休日/.test(text);
-  if (!hasClosedKw && !hasKrJp) return null;
+  const hasStrong = /公休|定休|closed|休館|休業|休日/i.test(text) || /휴무|휴일|曜定休|曜休日/.test(text);
+  const hasRest = /休息/.test(text);
+  if (!hasStrong && !hasRest) return null;
 
-  const zhMap:any = {'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'日':0,'天':0};
-  const krMap:any = {'월':1,'화':2,'수':3,'목':4,'금':5,'토':6,'일':0};
-  const jpMap:any = {'月':1,'火':2,'水':3,'木':4,'金':5,'土':6,'日':0};
-
-  const closed = new Set<number>();
-  let m:any;
-
-  // 核心：只看每個公休關鍵字「前面 25 字」來抓公休日，避免把營業時間範圍誤判
-  const kwRe = /公休|定休|closed|休館|休業/gi;
-  while ((m = kwRe.exec(text)) !== null) {
-    const before = text.slice(Math.max(0, m.index - 25), m.index);
-
-    // 範圍：週一至週三（只在公休前面才算）
-    const rangeM = /[週周]([一二三四五六日天])[至~～－\-到][週周]([一二三四五六日天])/.exec(before);
-    if (rangeM) {
-      const s = zhMap[rangeM[1]], e = zhMap[rangeM[2]];
-      if (s !== undefined && e !== undefined) {
-        let d = s, safe = 0;
-        while (safe++ < 8) { closed.add(d); if (d === e) break; d = (d+1)%7; }
-      }
-    }
-    // 多天/單天：週日、週一三五
-    const dayRe = /[週周]([一二三四五六日天]+)/g;
-    let dm:any;
-    while ((dm = dayRe.exec(before)) !== null) {
-      for (const [k,v] of Object.entries(zhMap)) if (dm[1].includes(k)) closed.add(v as number);
-    }
-  }
-
-  // 韓文：월요일 휴무（緊跟在一起）
-  const krRe = /([월화수목금토일])요일\s*(?:휴무|휴일)/g;
-  while ((m = krRe.exec(text)) !== null) { const d=krMap[m[1]]; if(d!==undefined) closed.add(d); }
-
-  // 日文：月曜定休
-  const jpRe = /([月火水木金土日])曜(?:定休|休日)/g;
-  while ((m = jpRe.exec(text)) !== null) { const d=jpMap[m[1]]; if(d!==undefined) closed.add(d); }
-
-  // 英文：Monday closed / closed on Monday
-  const enMap:any = {mon:1,tue:2,wed:3,thu:4,fri:5,sat:6,sun:0,monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6,sunday:0};
-  const lower = text.toLowerCase();
-  for (const [k,v] of Object.entries(enMap)) {
-    if (new RegExp(`${k}\\s*closed|closed\\s*(on\\s*)?${k}`).test(lower)) closed.add(v as number);
-  }
-
-  if (closed.size === 0) return 'uncertain';
-  return closed.has(today) ? 'closed' : null;
+  const closed = tripClosedWeekdays(text);
+  if (closed.length > 0) return closed.includes(today) ? 'closed' : null;
+  // 抓不到具體公休日：有正式公休字才算「不確定」；只有「休息（時段）」就當正常營業
+  return hasStrong ? 'uncertain' : null;
 }
 
 
 // ── 抽出公休日標籤（用於清單/網格常態顯示）────────────────────────────────
 function getClosedDaysLabel(opening_hours: string): string|null {
   if (!opening_hours || !opening_hours.trim()) return null;
-  const text = opening_hours;
-  if (/全年無休|每天營業|無休|7天|天天/.test(text)) return null;
-
-  const zhMap:any = {'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'日':0,'天':0};
+  if (/全年無休|每天營業|無休|7天|天天/.test(opening_hours)) return null;
+  const closed = tripClosedWeekdays(opening_hours);
+  if (closed.length === 0) return null;
   const numToZh = ['日','一','二','三','四','五','六'];
-  const closed = new Set<number>();
-  let m:any;
-
-  const kwRe = /公休|定休|closed|休館|休業/gi;
-  while ((m = kwRe.exec(text)) !== null) {
-    const before = text.slice(Math.max(0, m.index - 25), m.index);
-    const rangeM = /[週周]([一二三四五六日天])[至~～－\-到][週周]([一二三四五六日天])/.exec(before);
-    if (rangeM) {
-      const s = zhMap[rangeM[1]], e = zhMap[rangeM[2]];
-      if (s !== undefined && e !== undefined) {
-        let d = s, safe = 0;
-        while (safe++ < 8) { closed.add(d); if (d === e) break; d = (d+1)%7; }
-      }
-    }
-    const dayRe = /[週周]([一二三四五六日天]+)/g;
-    let dm:any;
-    while ((dm = dayRe.exec(before)) !== null) {
-      for (const [k,v] of Object.entries(zhMap)) if (dm[1].includes(k)) closed.add(v as number);
-    }
-  }
-  // 韓文
-  const krMap:any = {'월':1,'화':2,'수':3,'목':4,'금':5,'토':6,'일':0};
-  const krNameMap:any = {1:'월요일',2:'화요일',3:'수요일',4:'목요일',5:'금요일',6:'토요일',0:'일요일'};
-  const krRe = /([월화수목금토일])요일\s*(?:휴무|휴일)/g;
-  while ((m = krRe.exec(text)) !== null) { const d=krMap[m[1]]; if(d!==undefined) closed.add(d); }
-  // 日文
-  const jpMap:any = {'月':1,'火':2,'水':3,'木':4,'金':5,'土':6,'日':0};
-  const jpRe = /([月火水木金土日])曜(?:定休|休日)/g;
-  while ((m = jpRe.exec(text)) !== null) { const d=jpMap[m[1]]; if(d!==undefined) closed.add(d); }
-
-  if (closed.size === 0) return null;
-  // 排序後組成「週X公休」
   const days = [...closed].sort((a,b)=>a===0?7-b:b===0?a-7:a-b);
   return '週' + days.map(d=>numToZh[d]).join('、') + '公休';
 }
@@ -3094,7 +3018,7 @@ function tripTodayStr(){ return tripDateToStr(new Date()); }
 function tripEnumerate(start:string,end:string){ const res:string[]=[]; if(!start||!end) return res; let d=tripParseDate(start); const e=tripDateToStr(tripParseDate(end)); let s=0; while(tripDateToStr(d)<=e && s++<500){ res.push(tripDateToStr(d)); d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1);} return res; }
 function tripRebuildDays(start:string,end:string,existing:any[]){ const dates=tripEnumerate(start,end); const map:any={}; (existing||[]).forEach((dy:any)=>{ map[dy.date]=dy.items||[]; }); return dates.map((dt:string)=>({date:dt, items:map[dt]||[]})); }
 function tripUid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
-function tripPlaceQuery(p:any){ const nm=(p && p.map_query && p.map_query.trim())?p.map_query.trim():((p&&p.name)||''); return [nm, p&&p.address].map((s:string)=>(s||'').trim()).filter(Boolean).join(' '); }
+function tripPlaceQuery(p:any){ if(p && p._custom) return (p.address||'').trim(); const nm=(p && p.map_query && p.map_query.trim())?p.map_query.trim():((p&&p.name)||''); return [nm, p&&p.address].map((s:string)=>(s||'').trim()).filter(Boolean).join(' '); }
 function tripNavApp(country:string){ if(country==='中國') return {name:'高德', bg:'#E9F0FB', color:'#185FA5'}; if(country==='韓國') return {name:'Naver', bg:'#DFF3E8', color:'#0F6E56'}; return {name:'Google', bg:'#E9F0FB', color:'#185FA5'}; }
 function tripNavUrl(fromP:any, toP:any, country:string){
   const toQ=encodeURIComponent(tripPlaceQuery(toP));
@@ -3116,27 +3040,38 @@ function tripCountdown(t:any){
   return '進行中';
 }
 const TRIP_WD_ZH=['日','一','二','三','四','五','六'];
-// 解析營業時間 → 公休的星期幾（0=日…6=六）
+// 解析營業時間 → 公休的星期幾（0=日…6=六）。逐段判斷：只有「該段含公休關鍵字」才解析該段星期
 function tripClosedWeekdays(oh:string):number[]{
   if(!oh||!oh.trim()) return [];
   const text=oh;
   if(/全年無休|每天營業|無休|7天|天天/.test(text)) return [];
   const zhMap:any={'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'日':0,'天':0};
-  const closed=new Set<number>(); let m:any;
-  const kwRe=/公休|定休|closed|休館|休業/gi;
-  while((m=kwRe.exec(text))!==null){
-    const before=text.slice(Math.max(0,m.index-25),m.index);
-    const rangeM=/[週周]([一二三四五六日天])[至~～－\-到][週周]([一二三四五六日天])/.exec(before);
+  const closed=new Set<number>();
+  const CLOSE_KW=/公休|定休|休館|休業|休息|休日|closed/i;
+  const segments=text.split(/[\n；;。]+/);
+  for(const seg of segments){
+    if(!CLOSE_KW.test(seg)) continue;
+    const strong=/公休|定休|休館|休業|休日|closed/i.test(seg);
+    const hasTime=/\d{1,2}\s*[:：]\s*\d{2}/.test(seg);
+    if(!strong && /休息/.test(seg) && hasTime) continue; // 「14:00-15:00 休息」這種休息時段，不算整天公休
+    // 區間：週X 至/到/~ 週Y
+    const rangeM=/[週周]([一二三四五六日天])\s*[至~～－\-到]+\s*[週周]?([一二三四五六日天])/.exec(seg);
     if(rangeM){ const s=zhMap[rangeM[1]],e=zhMap[rangeM[2]]; if(s!==undefined&&e!==undefined){ let d=s,safe=0; while(safe++<8){ closed.add(d); if(d===e) break; d=(d+1)%7; } } }
-    const dayRe=/[週周]([一二三四五六日天]+)/g; let dm:any;
-    while((dm=dayRe.exec(before))!==null){ for(const [k,v] of Object.entries(zhMap)) if(dm[1].includes(k)) closed.add(v as number); }
+    // 個別：週日、週一 或 週一、二、三
+    const groupRe=/[週周]\s*([一二三四五六日天](?:\s*[、,，]\s*[一二三四五六日天])*)/g; let gm:any;
+    while((gm=groupRe.exec(seg))!==null){ for(const ch of gm[1]) if(zhMap[ch]!==undefined) closed.add(zhMap[ch]); }
   }
-  const krMap:any={'월':1,'화':2,'수':3,'목':4,'금':5,'토':6,'일':0};
+  // 韓文 / 日文（關鍵字緊鄰，安全）
+  const krMap:any={'월':1,'화':2,'수':3,'목':4,'금':5,'토':6,'일':0}; let m:any;
   const krRe=/([월화수목금토일])요일\s*(?:휴무|휴일)/g;
   while((m=krRe.exec(text))!==null){ const d=krMap[m[1]]; if(d!==undefined) closed.add(d); }
   const jpMap:any={'月':1,'火':2,'水':3,'木':4,'金':5,'土':6,'日':0};
   const jpRe=/([月火水木金土日])曜(?:定休|休日)/g;
   while((m=jpRe.exec(text))!==null){ const d=jpMap[m[1]]; if(d!==undefined) closed.add(d); }
+  // 英文：Monday closed / closed on Monday
+  const enMap:any={mon:1,tue:2,wed:3,thu:4,fri:5,sat:6,sun:0,monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6,sunday:0};
+  const lower=text.toLowerCase();
+  for(const [k,v] of Object.entries(enMap)){ if(new RegExp(`${k}\\s*closed|closed\\s*(on\\s*)?${k}`).test(lower)) closed.add(v as number); }
   return [...closed];
 }
 // 這家店在「某天（YYYY-MM-DD）」是否公休
@@ -3414,6 +3349,7 @@ function TripDetail({ trip, places, onBack, onSaveDays, onEditTrip, onOpenPlace 
   const [picking,setPicking]=useState(false);
   const [lightbox,setLightbox]=useState<{photos:string[],index:number}|null>(null);
   const lbStartX=useRef(0);
+  const swipeStart=useRef<{x:number,y:number,edge:boolean}|null>(null);
   const [dragIdx,setDragIdx]=useState<number|null>(null);
   const [overIdx,setOverIdx]=useState<number|null>(null);
   const [dragY,setDragY]=useState(0);
@@ -3462,6 +3398,18 @@ function TripDetail({ trip, places, onBack, onSaveDays, onEditTrip, onOpenPlace 
 
   function addPlaces(ids:string[]){ const add=ids.map(id=>({ id:tripUid(), kind:'place', place_id:id, time:'', note:'', photos:[] })); saveItems(sortItemsByTime([...items, ...add])); setPicking(false); }
 
+  // 內容區左右滑切換天數（左緣留給系統返回手勢；拖拉排序時不算）
+  function contentTouchStart(e:any){ const t=e.touches[0]; swipeStart.current={ x:t.clientX, y:t.clientY, edge:t.clientX<24 }; }
+  function contentTouchEnd(e:any){
+    const s=swipeStart.current; swipeStart.current=null;
+    if(!s || s.edge || dragIdx!==null) return;
+    const t=e.changedTouches[0]; const dx=t.clientX-s.x, dy=t.clientY-s.y;
+    if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.5){
+      if(dx<0 && activeIdx<days.length-1) setActiveIdx(activeIdx+1);
+      else if(dx>0 && activeIdx>0) setActiveIdx(activeIdx-1);
+    }
+  }
+
   return (
     <div style={{ minHeight:'100vh', background:'#F5F0EB' }}>
       <div style={{ background:'#FDF8F3', paddingTop:'calc(env(safe-area-inset-top) + 14px)', paddingBottom:12, paddingLeft:18, paddingRight:18 }}>
@@ -3478,9 +3426,14 @@ function TripDetail({ trip, places, onBack, onSaveDays, onEditTrip, onOpenPlace 
             </button>
           ); })}
         </div>
+        {days.length>1 && (
+          <div style={{ display:'flex', justifyContent:'center', gap:6, marginTop:10 }}>
+            {days.map((d:any,i:number)=>(<div key={d.date} style={{ width:i===activeIdx?16:6, height:6, borderRadius:3, background:i===activeIdx?'#000':'#D3CFC6', transition:'all 0.2s' }} />))}
+          </div>
+        )}
       </div>
 
-      <div style={{ padding:'14px 16px 40px' }}>
+      <div onTouchStart={contentTouchStart} onTouchEnd={contentTouchEnd} style={{ padding:'14px 16px 40px', minHeight:'72vh' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, padding:'0 2px' }}>
           <div style={{ fontSize:DAY_LABEL_SIZE, fontWeight:600, color:'#000', letterSpacing:0.3 }}>Day {activeIdx+1}</div>
           {items.length>1 && <button onClick={()=>saveItems(sortItemsByTime(items))} style={{ background:'none', border:'none', color:'#8E8E93', fontSize:12, cursor:'pointer', padding:0 }}>⇅ 依時間排序</button>}
