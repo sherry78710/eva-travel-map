@@ -647,7 +647,7 @@ function PlaceRow({ place, onClick }) {
       <div style={{ flex:1 }}>
         <div style={{ fontSize:15, fontWeight:600, color:"#000", marginBottom:2 }}>{place.name}</div>
         <div style={{ fontSize:12, color:"#8E8E93" }}>{[place.district, place.neighborhood].filter(Boolean).join(" ")}{place.types?.[0] ? ` · ${place.types[0]}` : ""}</div>
-        {place.note && <div style={{ fontSize:11, color:"#C7C7CC", marginTop:2, fontStyle:"italic" }}>{place.note}</div>}
+        {place.note && <div style={{ fontSize:11, color:"#636366", marginTop:2, fontStyle:"italic" }}>{place.note}</div>}
         {place.rating > 0 && (
           <div style={{ fontSize:11, color:"#FF9500", marginTop:2 }}>{"\u2665".repeat(place.rating)}{"\u2661".repeat(5-place.rating)}</div>
         )}
@@ -1194,7 +1194,7 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
                 <div style={{ padding:"8px 10px 10px" }}>
                   <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
                   <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
-                  {p.note && <div style={{ fontSize:10, color:"#C7C7CC", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
+                  {p.note && <div style={{ fontSize:10, color:"#636366", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
                 </div>
               </button>
             ))}
@@ -1334,7 +1334,7 @@ function CountryPage({ country, places, onBack, onSelect }) {
                       <div style={{ padding:"8px 10px 10px" }}>
                         <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
                         <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
-                        {p.note && <div style={{ fontSize:10, color:"#C7C7CC", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
+                        {p.note && <div style={{ fontSize:10, color:"#636366", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
                       </div>
                     </button>
                   ))}
