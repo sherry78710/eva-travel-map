@@ -2121,7 +2121,7 @@ function parseAddress(addr, geoData) {
 }
 
 function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb }) {
-  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[] });
+  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[] });
   const [saving,setSaving] = useState(false);
   const photoInputRef = useRef(null);
   const set=(k:string,v:any)=>setF((x:any)=>({...x,[k]:v}));
@@ -2188,29 +2188,13 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
             <input value={f.map_query} onChange={e=>set("map_query",e.target.value)} placeholder=""
               style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
-          <div style={{ padding:"14px 16px" }}>
+          <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>收藏原因</div>
             <input value={f.note} onChange={e=>set("note",e.target.value)} placeholder="" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
-        </div>
-
-        {/* 照片上傳 */}
-        <div style={{ background:"#FDF8F3", borderRadius:16, padding:16, marginBottom:12 }}>
-          <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>照片（選填）</div>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            {(f.photos||[]).map((photo,i)=>(
-              <div key={i} style={{ position:"relative", width:72, height:72, borderRadius:10, overflow:"hidden", flexShrink:0 }}>
-                <img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                <button onClick={()=>set("photos",(f.photos||[]).filter((_,idx)=>idx!==i))}
-                  style={{ position:"absolute", top:2, right:2, width:18, height:18, borderRadius:"50%", background:"rgba(0,0,0,0.6)", border:"none", color:"white", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
-              </div>
-            ))}
-            <button onClick={()=>photoInputRef.current&&photoInputRef.current.click()}
-              style={{ width:72, height:72, borderRadius:10, border:"1.5px dashed #C9C4BE", background:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:3, color:"#8E8E93", flexShrink:0 }}>
-              <span style={{ fontSize:22, lineHeight:1 }}>+</span>
-              <span style={{ fontSize:10 }}>加照片</span>
-            </button>
-            <input ref={photoInputRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={handlePhotoAdd} />
+          <div style={{ padding:"14px 16px" }}>
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>營業時間 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 選填</span></div>
+            <input value={f.opening_hours} onChange={e=>set("opening_hours",e.target.value)} placeholder="例：週一至週五 11:30–21:00" style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
         </div>
 
@@ -2233,19 +2217,36 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
           </div>
         </div>
 
-        <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden" }}>
+        <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
           <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>推薦品項</div>
-            <textarea value={f.recommendations as string}
-              onChange={e=>set("recommendations", e.target.value)}
-              placeholder=""
-              rows={3}
+            <textarea value={f.recommendations as string} onChange={e=>set("recommendations", e.target.value)} placeholder="" rows={3}
               style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6 }} />
           </div>
           <div style={{ padding:"14px 16px" }}>
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>來源連結</div>
             <input value={f.source_url} onChange={e=>set("source_url", e.target.value)}
               style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
+          </div>
+        </div>
+
+        {/* 照片上傳（最底）*/}
+        <div style={{ background:"#FDF8F3", borderRadius:16, padding:16, marginBottom:12 }}>
+          <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>照片（選填）</div>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            {(f.photos||[]).map((photo,i)=>(
+              <div key={i} style={{ position:"relative", width:72, height:72, borderRadius:10, overflow:"hidden", flexShrink:0 }}>
+                <img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                <button onClick={()=>set("photos",(f.photos||[]).filter((_,idx)=>idx!==i))}
+                  style={{ position:"absolute", top:2, right:2, width:18, height:18, borderRadius:"50%", background:"rgba(0,0,0,0.6)", border:"none", color:"white", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+              </div>
+            ))}
+            <button onClick={()=>photoInputRef.current&&photoInputRef.current.click()}
+              style={{ width:72, height:72, borderRadius:10, border:"1.5px dashed #C9C4BE", background:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:3, color:"#8E8E93", flexShrink:0 }}>
+              <span style={{ fontSize:22, lineHeight:1 }}>+</span>
+              <span style={{ fontSize:10 }}>加照片</span>
+            </button>
+            <input ref={photoInputRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={handlePhotoAdd} />
           </div>
         </div>
       </div>
@@ -2278,6 +2279,13 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
             <div style={{ padding:"14px 16px" }}>
               <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>收藏原因 / 備註</div>
               <input value={f.note||""} onChange={e=>setF(x=>({...x,note:e.target.value}))} style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
+            </div>
+          </div>
+
+          <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
+            <div style={{ padding:"14px 16px" }}>
+              <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>營業時間 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 選填</span></div>
+              <input value={(f as any).opening_hours||""} onChange={e=>setF((x:any)=>({...x,opening_hours:e.target.value}))} placeholder="例：週一至週五 11:30–21:00" style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
             </div>
           </div>
 
@@ -2411,20 +2419,26 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
 
         <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
           {place.types?.length>0 && <DRow label="類型" value={place.types.join("・")} />}
-          {place.recommendations && (typeof place.recommendations === 'string' ? place.recommendations : (place.recommendations as string[]).join('\n')).trim().length>0 && (
-            <div style={{ padding:"14px 16px" }}>
-              <div style={{ fontSize:13, color:"#8E8E93", marginBottom:8 }}>推薦品項</div>
-              <div style={{ fontSize:15, color:"#000", lineHeight:1.7, whiteSpace:"pre-line" }}>
-                {typeof place.recommendations === 'string' ? place.recommendations : (place.recommendations as string[]).join('\n')}
-              </div>
-            </div>
-          )}
         </div>
+
+        {place.opening_hours && <div style={{ background:"#FDF8F3", borderRadius:16, padding:"14px 16px", marginBottom:12 }}>
+          <div style={{ fontSize:11, color:"#8E8E93", marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>營業時間</div>
+          <div style={{ fontSize:15, color:"#000", lineHeight:1.6, whiteSpace:"pre-line" }}>{place.opening_hours}</div>
+        </div>}
 
         {place.note && <div style={{ background:"#FDF8F3", borderRadius:16, padding:"14px 16px", marginBottom:12 }}>
           <div style={{ fontSize:11, color:"#8E8E93", marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>收藏原因 / 備註</div>
           <div style={{ fontSize:15, color:"#000", lineHeight:1.5 }}>{place.note}</div>
         </div>}
+
+        {place.recommendations && (typeof place.recommendations === 'string' ? place.recommendations : (place.recommendations as string[]).join('\n')).trim().length>0 && (
+          <div style={{ background:"#FDF8F3", borderRadius:16, padding:"14px 16px", marginBottom:12 }}>
+            <div style={{ fontSize:13, color:"#8E8E93", marginBottom:8 }}>推薦品項</div>
+            <div style={{ fontSize:15, color:"#000", lineHeight:1.7, whiteSpace:"pre-line" }}>
+              {typeof place.recommendations === 'string' ? place.recommendations : (place.recommendations as string[]).join('\n')}
+            </div>
+          </div>
+        )}
 
         {place.source_url && (
           <a href={place.source_url} target="_blank" rel="noreferrer" style={{ display:"block", background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12, textDecoration:"none" }}>
@@ -2896,7 +2910,7 @@ export default function App() {
       name:p.name, country:p.country, city:p.city||'',
       district:p.district||'', neighborhood:p.neighborhood||'',
       types:p.types||[], status:'wishlist',
-      note:p.note||'', address:p.address||'',
+      note:p.note||'', address:p.address||'', opening_hours:p.opening_hours||'',
       recommendations: (typeof p.recommendations === 'string' ? p.recommendations.split('\n') : (p.recommendations||[])).map((s:string)=>s.trim()).filter(Boolean),
       source_url:p.source_url||'',
       rating:0, review:'', summary:p.map_query||'', tags:[], photos:p.photos||[],
@@ -2918,7 +2932,7 @@ export default function App() {
     const {error}=await sb.from('places').update({
       name:u.name, country:u.country, city:u.city,
       district:u.district||'', neighborhood:u.neighborhood,
-      types:u.types||[], note:u.note||'', address:u.address||'',
+      types:u.types||[], note:u.note||'', address:u.address||'', opening_hours:u.opening_hours||'',
       recommendations: (typeof u.recommendations === 'string' ? u.recommendations.split('\n') : (u.recommendations||[])).map((s:string)=>s.trim()).filter(Boolean), source_url:u.source_url||'',
       rating:u.rating||0, review:u.review||'', photos:u.photos||[],
       status:u.status, summary:u.map_query||'', tags:u.tags||[],
