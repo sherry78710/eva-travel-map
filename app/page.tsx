@@ -2360,6 +2360,10 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
         </div>
       )}
       {/* 固定頂部 */}
+      <div style={{ flexShrink:0, background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 12px)", paddingBottom:"12px", paddingLeft:"20px", paddingRight:"20px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0 }}>‹ 返回</button>
+        <button onClick={()=>setEditing(true)} style={{ background:"none", border:"none", color:"#007AFF", fontSize:15, fontWeight:600, cursor:"pointer", padding:0 }}>編輯</button>
+      </div>
       {/* 滾動區域 */}
       <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"16px 20px 40px" }}>
         <div style={{ marginBottom:16 }}>
