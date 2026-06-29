@@ -2247,6 +2247,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
 function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, types, geoData }) {
   const [editing, setEditing] = useState(false);
   const [f, setF] = useState({...place});
+  const [lightboxLocal, setLightboxLocal] = useState<{photos:string[],index:number}|null>(null);
   const searchName = (place.map_query && place.map_query.trim()) ? place.map_query.trim() : (place.name||"");
   const q = encodeURIComponent([searchName, place.address].map((s:string)=>(s||"").trim()).filter(Boolean).join(" "));
 
@@ -2301,6 +2302,35 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
 
           <RatingRow rating={f.rating||0} review={f.review||""} onChange={({rating,review})=>setF(x=>({...x,rating,review}))} />
 
+          {/* 照片 */}
+          <div style={{ background:"#FDF8F3", borderRadius:16, padding:"16px", marginBottom:12 }}>
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>照片</div>
+            <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:2 }}>
+              {(f.photos||[]).map((photo:string, i:number) => (
+                <div key={i} style={{ flexShrink:0, width:100, height:100, borderRadius:10, overflow:"hidden", position:"relative" }}>
+                  <img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                  <button onClick={()=>setF((x:any)=>({...x,photos:x.photos.filter((_:any,idx:number)=>idx!==i)}))}
+                    style={{ position:"absolute", top:4, right:4, background:"rgba(0,0,0,0.55)", border:"none", borderRadius:"50%", width:22, height:22, color:"white", fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+                </div>
+              ))}
+              <label style={{ flexShrink:0, width:100, height:100, borderRadius:10, background:"#EDE8E2", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", cursor:"pointer", gap:4 }}>
+                <span style={{ fontSize:26, color:"#8E8E93" }}>+</span>
+                <span style={{ fontSize:11, color:"#8E8E93" }}>加照片</span>
+                <input type="file" accept="image/*" multiple style={{ display:"none" }} onChange={async e=>{
+                  const files = Array.from(e.target.files||[]);
+                  const urls:string[] = [];
+                  for(const file of files as File[]){
+                    const compressed = await compressImage(file);
+                    const path = `places/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+                    const { error } = await sb.storage.from('photos').upload(path, compressed, { upsert:true, contentType:'image/jpeg' });
+                    if(!error){ const { data } = sb.storage.from('photos').getPublicUrl(path); urls.push(data.publicUrl); }
+                  }
+                  if(urls.length>0) setF((x:any)=>({...x,photos:[...(x.photos||[]),...urls]}));
+                }} />
+              </label>
+            </div>
+          </div>
+
           <button onClick={()=>{ if(window.confirm("確定刪除？")) onDelete(place.id); }}
             style={{ width:"100%", padding:15, border:"none", borderRadius:14, background:"#FDF8F3", color:"#FF3B30", fontSize:15, fontWeight:600, cursor:"pointer" }}>
             刪除這筆收藏
@@ -2312,11 +2342,24 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
 
   return (
     <div style={{ display:"flex", flexDirection:"column", width:"100%", height:"100%", background:"#F5F0EB" }}>
+      {/* Lightbox */}
+      {lightboxLocal && (
+        <div onClick={()=>setLightboxLocal(null)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <img src={lightboxLocal.photos[lightboxLocal.index]} alt=""
+            style={{ maxWidth:"100%", maxHeight:"100%", objectFit:"contain" }}
+            onClick={e=>e.stopPropagation()} />
+          <button onClick={()=>setLightboxLocal(null)}
+            style={{ position:"absolute", top:20, right:20, background:"none", border:"none", color:"white", fontSize:28, cursor:"pointer", lineHeight:1 }}>✕</button>
+          {lightboxLocal.photos.length > 1 && (<>
+            <button onClick={e=>{e.stopPropagation();setLightboxLocal(l=>l?{...l,index:(l.index-1+l.photos.length)%l.photos.length}:null)}}
+              style={{ position:"absolute", left:16, background:"rgba(255,255,255,0.2)", border:"none", borderRadius:"50%", width:40, height:40, color:"white", fontSize:22, cursor:"pointer" }}>‹</button>
+            <button onClick={e=>{e.stopPropagation();setLightboxLocal(l=>l?{...l,index:(l.index+1)%l.photos.length}:null)}}
+              style={{ position:"absolute", right:16, background:"rgba(255,255,255,0.2)", border:"none", borderRadius:"50%", width:40, height:40, color:"white", fontSize:22, cursor:"pointer" }}>›</button>
+          </>)}
+        </div>
+      )}
       {/* 固定頂部 */}
-      <div style={{ flexShrink:0, background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 12px)", paddingBottom:"12px", paddingLeft:"20px", paddingRight:"20px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-        <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0 }}>‹ 返回</button>
-        <button onClick={()=>setEditing(true)} style={{ background:"none", border:"none", color:"#007AFF", fontSize:15, fontWeight:600, cursor:"pointer", padding:0 }}>編輯</button>
-      </div>
       {/* 滾動區域 */}
       <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"16px 20px 40px" }}>
         <div style={{ marginBottom:16 }}>
@@ -2390,37 +2433,20 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
           </a>
         )}
 
-        {/* Photos */}
-        <div style={{ background:"#FDF8F3", borderRadius:16, padding:"16px", marginBottom:12 }}>
-          <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>照片</div>
-          <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:2 }}>
-            {(place.photos||[]).map((photo, i) => (
-              <div key={i} style={{ flexShrink:0, width:120, height:120, borderRadius:10, overflow:"hidden", position:"relative" }}>
-                <img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                <button onClick={() => onEdit({...place, photos:(place.photos||[]).filter((_,idx)=>idx!==i)})}
-                  style={{ position:"absolute", top:4, right:4, background:"rgba(0,0,0,0.5)", border:"none", borderRadius:"50%", width:22, height:22, color:"white", fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
-              </div>
-            ))}
-            <label style={{ flexShrink:0, width:120, height:120, borderRadius:10, background:"#F5F0EB", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", cursor:"pointer", gap:4 }}>
-              <span style={{ fontSize:28, color:"#C7C7CC" }}>+</span>
-              <span style={{ fontSize:11, color:"#8E8E93" }}>新增照片</span>
-              <input type="file" accept="image/*" multiple style={{ display:"none" }} onChange={async e => {
-                const files = Array.from(e.target.files||[]);
-                const urls:string[] = [];
-                for(const file of files as File[]){
-                  const compressed = await compressImage(file);
-                  const path = `places/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-                  const { error } = await sb.storage.from('photos').upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
-                  if(!error){
-                    const { data } = sb.storage.from('photos').getPublicUrl(path);
-                    urls.push(data.publicUrl);
-                  }
-                }
-                if(urls.length>0) onEdit({...place, photos:[...(place.photos||[]), ...urls]});
-              }} />
-            </label>
+        {/* Photos — view only, tap to enlarge */}
+        {(place.photos||[]).length > 0 && (
+          <div style={{ background:"#FDF8F3", borderRadius:16, padding:"16px", marginBottom:12 }}>
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>照片</div>
+            <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:2 }}>
+              {(place.photos||[]).map((photo, i) => (
+                <div key={i} onClick={()=>setLightboxLocal({photos:place.photos, index:i})}
+                  style={{ flexShrink:0, width:120, height:120, borderRadius:10, overflow:"hidden", cursor:"pointer" }}>
+                  <img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px" }}>
