@@ -628,6 +628,62 @@ function getCities(country) { return Object.keys(GEO[country] || {}); }
 function getDistricts(country, city) { return Object.keys((GEO[country] || {})[city] || {}); }
 function getNeighborhoods(country, city, district) { return ((GEO[country] || {})[city] || {})[district] || []; }
 
+// ── 今日公休判斷 ──────────────────────────────────────────────────────────────
+function checkTodayClosed(opening_hours: string): 'closed'|'uncertain'|null {
+  if (!opening_hours || !opening_hours.trim()) return null;
+  const text = opening_hours;
+  const today = new Date().getDay(); // 0=日,1=一,2=二,3=三,4=四,5=五,6=六
+
+  if (/全年無休|每天營業|無休|7天|天天/.test(text)) return null;
+  if (/隔週|每隔|每月第|不定期|隔周/.test(text)) return 'uncertain';
+
+  const hasClosedKw = /公休|休息|休業|定休|closed|休館|休日|휴무|휴일/i.test(text);
+  if (!hasClosedKw) return null;
+
+  const zhMap:any = {'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'日':0,'天':0};
+  const krMap:any = {'월':1,'화':2,'수':3,'목':4,'금':5,'토':6,'일':0};
+  const jpMap:any = {'月':1,'火':2,'水':3,'木':4,'金':5,'土':6,'日':0};
+  const enMap:any = {mon:1,tue:2,wed:3,thu:4,fri:5,sat:6,sun:0,monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6,sunday:0};
+
+  const closed = new Set<number>();
+  let m:any;
+
+  // 範圍：週一至週三、週一~週六
+  const rangeRe = /[週周]([一二三四五六日天])[至~～－\-到][週周]([一二三四五六日天])/g;
+  while ((m = rangeRe.exec(text)) !== null) {
+    const s = zhMap[m[1]], e = zhMap[m[2]];
+    if (s !== undefined && e !== undefined) {
+      let d = s; let safe = 0;
+      while (safe++ < 8) { closed.add(d); if (d === e) break; d = (d+1)%7; }
+    }
+  }
+
+  // 多天：週一三五、週一、三
+  const multiRe = /[週周]([一二三四五六日天、，,\s]{1,15})(?=公休|休息|定休|休業|休館)/g;
+  while ((m = multiRe.exec(text)) !== null) {
+    for (const [k,v] of Object.entries(zhMap)) if (m[1].includes(k)) closed.add(v as number);
+  }
+
+  // 單天：週一
+  const singleRe = /[週周]([一二三四五六日天])/g;
+  while ((m = singleRe.exec(text)) !== null) { const d=zhMap[m[1]]; if(d!==undefined) closed.add(d); }
+
+  // 韓文：월요일
+  const krRe = /([월화수목금토일])요일/g;
+  while ((m = krRe.exec(text)) !== null) { const d=krMap[m[1]]; if(d!==undefined) closed.add(d); }
+
+  // 日文：月曜定休
+  const jpRe = /([月火水木金土日])曜/g;
+  while ((m = jpRe.exec(text)) !== null) { const d=jpMap[m[1]]; if(d!==undefined) closed.add(d); }
+
+  // 英文
+  const lower = text.toLowerCase();
+  for (const [k,v] of Object.entries(enMap)) if (lower.includes(k)) closed.add(v as number);
+
+  if (closed.size === 0) return 'uncertain';
+  return closed.has(today) ? 'closed' : null;
+}
+
 function PlaceIcon({ status }) {
   const s = STATUS_CFG[status];
   return <div style={{ width:44, height:44, borderRadius:12, background:s.iconBg, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, color:s.iconColor, flexShrink:0 }}>{s.mark}</div>;
@@ -635,6 +691,7 @@ function PlaceIcon({ status }) {
 
 function PlaceRow({ place, onClick }) {
   const coverPhoto = place.photos?.[0];
+  const closedStatus = checkTodayClosed(place.opening_hours);
   return (
     <button onClick={onClick} style={{ width:"100%", display:"flex", alignItems:"center", gap:14, padding:"14px 16px", background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
       {coverPhoto ? (
@@ -648,6 +705,8 @@ function PlaceRow({ place, onClick }) {
         <div style={{ fontSize:15, fontWeight:600, color:"#000", marginBottom:2 }}>{place.name}</div>
         <div style={{ fontSize:12, color:"#8E8E93" }}>{[place.district, place.neighborhood].filter(Boolean).join(" ")}{place.types?.[0] ? ` · ${place.types[0]}` : ""}</div>
         {place.note && <div style={{ fontSize:11, color:"#636366", marginTop:2, fontStyle:"italic" }}>{place.note}</div>}
+        {closedStatus==='closed' && <span style={{ display:"inline-block", marginTop:4, padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:500, background:"#F5E6E4", color:"#A85550" }}>● 今日公休</span>}
+        {closedStatus==='uncertain' && <span style={{ display:"inline-block", marginTop:4, padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:500, background:"#F0EBE4", color:"#9C8878" }}>? 公休不確定</span>}
         {place.rating > 0 && (
           <div style={{ fontSize:11, color:"#FF9500", marginTop:2 }}>{"\u2665".repeat(place.rating)}{"\u2661".repeat(5-place.rating)}</div>
         )}
@@ -1205,6 +1264,7 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
                   <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
                   <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
                   {p.note && <div style={{ fontSize:10, color:"#636366", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
+                  {(()=>{const cs=checkTodayClosed(p.opening_hours);return cs==='closed'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F5E6E4",color:"#A85550"}}>● 今日公休</span>:cs==='uncertain'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F0EBE4",color:"#9C8878"}}>? 不確定</span>:null;})()}
                 </div>
               </button>
             ))}
@@ -1345,6 +1405,7 @@ function CountryPage({ country, places, onBack, onSelect }) {
                         <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
                         <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
                         {p.note && <div style={{ fontSize:10, color:"#636366", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
+                        {(()=>{const cs=checkTodayClosed(p.opening_hours);return cs==='closed'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F5E6E4",color:"#A85550"}}>● 今日公休</span>:cs==='uncertain'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F0EBE4",color:"#9C8878"}}>? 不確定</span>:null;})()}
                       </div>
                     </button>
                   ))}
