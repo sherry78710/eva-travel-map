@@ -3115,6 +3115,41 @@ function tripCountdown(t:any){
   if(d===0) return '今天出發';
   return '進行中';
 }
+const TRIP_WD_ZH=['日','一','二','三','四','五','六'];
+// 解析營業時間 → 公休的星期幾（0=日…6=六）
+function tripClosedWeekdays(oh:string):number[]{
+  if(!oh||!oh.trim()) return [];
+  const text=oh;
+  if(/全年無休|每天營業|無休|7天|天天/.test(text)) return [];
+  const zhMap:any={'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'日':0,'天':0};
+  const closed=new Set<number>(); let m:any;
+  const kwRe=/公休|定休|closed|休館|休業/gi;
+  while((m=kwRe.exec(text))!==null){
+    const before=text.slice(Math.max(0,m.index-25),m.index);
+    const rangeM=/[週周]([一二三四五六日天])[至~～－\-到][週周]([一二三四五六日天])/.exec(before);
+    if(rangeM){ const s=zhMap[rangeM[1]],e=zhMap[rangeM[2]]; if(s!==undefined&&e!==undefined){ let d=s,safe=0; while(safe++<8){ closed.add(d); if(d===e) break; d=(d+1)%7; } } }
+    const dayRe=/[週周]([一二三四五六日天]+)/g; let dm:any;
+    while((dm=dayRe.exec(before))!==null){ for(const [k,v] of Object.entries(zhMap)) if(dm[1].includes(k)) closed.add(v as number); }
+  }
+  const krMap:any={'월':1,'화':2,'수':3,'목':4,'금':5,'토':6,'일':0};
+  const krRe=/([월화수목금토일])요일\s*(?:휴무|휴일)/g;
+  while((m=krRe.exec(text))!==null){ const d=krMap[m[1]]; if(d!==undefined) closed.add(d); }
+  const jpMap:any={'月':1,'火':2,'水':3,'木':4,'金':5,'土':6,'日':0};
+  const jpRe=/([月火水木金土日])曜(?:定休|休日)/g;
+  while((m=jpRe.exec(text))!==null){ const d=jpMap[m[1]]; if(d!==undefined) closed.add(d); }
+  return [...closed];
+}
+// 這家店在「某天（YYYY-MM-DD）」是否公休
+function tripClosedOnDate(oh:string, dateStr:string):boolean{
+  const wd=tripParseDate(dateStr).getDay();
+  return tripClosedWeekdays(oh).includes(wd);
+}
+// 依時間排序：有填時間的依時間先後填回各自位置，沒填時間的維持原本位置不動
+function sortItemsByTime(items:any[]):any[]{
+  const timed=items.filter((it:any)=>it.time).sort((a:any,b:any)=>String(a.time).localeCompare(String(b.time)));
+  let ti=0;
+  return items.map((it:any)=> it.time ? timed[ti++] : it);
+}
 
 // ── 我的行程列表 ──────────────────────────────────────────────────────────────
 function Trips({ trips, onBack, onOpen, onNew }:any){
@@ -3231,8 +3266,8 @@ function TripForm({ initial, countries, geoData, onBack, onSave, onDelete }:any)
 }
 
 // ── 站點 / 自訂項目 編輯彈窗 ─────────────────────────────────────────────────
-function TripItemEditor({ item, kind, onClose, onSave, onDelete }:any){
-  const [f,setF]=useState<any>({ time:item?.time||'', title:item?.title||'', address:item?.address||'', note:item?.note||'', photos:item?.photos||[] });
+function TripItemEditor({ item, kind, days, currentDate, onClose, onSave, onDelete }:any){
+  const [f,setF]=useState<any>({ time:item?.time||'', title:item?.title||'', address:item?.address||'', note:item?.note||'', photos:item?.photos||[], date:currentDate });
   const ref=useRef<any>(null);
   async function addPhoto(e:any){
     const files=Array.from(e.target.files||[]);
@@ -3254,6 +3289,19 @@ function TripItemEditor({ item, kind, onClose, onSave, onDelete }:any){
           <button onClick={()=>onSave(f)} style={{ background:'none', border:'none', color:'#007AFF', fontSize:16, fontWeight:600, cursor:'pointer', padding:0 }}>完成</button>
         </div>
         <div style={{ padding:'4px 18px 0' }}>
+          {days && days.length>1 && (
+            <div style={{ background:'#FDF8F3', borderRadius:14, padding:'12px 14px', marginBottom:12 }}>
+              <div style={labelCss}>日期 <span style={{ color:'#C7C7CC', fontWeight:400 }}>· 換到別天</span></div>
+              <div style={{ display:'flex', gap:7, overflowX:'auto', paddingBottom:2 }}>
+                {days.map((d:any,i:number)=>{ const a=f.date===d.date; return (
+                  <button key={d.date} onClick={()=>setF((x:any)=>({...x,date:d.date}))} style={{ flexShrink:0, border:'none', borderRadius:12, padding:'6px 11px', textAlign:'center', minWidth:42, cursor:'pointer', background:a?'#000':'#EDE8E2', color:a?'#fff':'#5F5E5A' }}>
+                    <div style={{ fontSize:12, fontWeight:a?600:400 }}>Day {i+1}</div>
+                    <div style={{ fontSize:10, opacity:a?0.7:1, color:a?'#fff':'#8E8E93' }}>{tripMd(d.date)}（{tripWeekdayZh(d.date)}）</div>
+                  </button>
+                ); })}
+              </div>
+            </div>
+          )}
           {kind==='custom' && (
             <div style={{ background:'#FDF8F3', borderRadius:14, overflow:'hidden', marginBottom:12 }}>
               <div style={{ padding:'13px 15px', borderBottom:'1px solid #EDE8E2' }}>
@@ -3301,7 +3349,7 @@ function TripItemEditor({ item, kind, onClose, onSave, onDelete }:any){
 }
 
 // ── 加入收藏（多選）彈窗 ──────────────────────────────────────────────────────
-function TripPlacePicker({ places, trip, onClose, onConfirm }:any){
+function TripPlacePicker({ places, trip, dayDate, onClose, onConfirm }:any){
   const [q,setQ]=useState(''); const [city,setCity]=useState(''); const [whole,setWhole]=useState(false); const [sel,setSel]=useState<string[]>([]);
   const inCountry=(places||[]).filter((p:any)=>p.country===trip.country);
   let base = (trip.cities&&trip.cities.length&&!whole) ? inCountry.filter((p:any)=>trip.cities.includes(p.city)) : inCountry;
@@ -3333,12 +3381,21 @@ function TripPlacePicker({ places, trip, onClose, onConfirm }:any){
         <div style={{ flex:1, overflowY:'auto', padding:'4px 18px 24px' }}>
           {list.length===0 && <div style={{ padding:'30px 0', textAlign:'center', color:'#8E8E93', fontSize:14 }}>沒有符合的收藏</div>}
           <div style={{ background:'#FDF8F3', borderRadius:14, overflow:'hidden' }}>
-            {list.map((p:any,i:number)=>{ const on=sel.includes(String(p.id)); return (
+            {list.map((p:any,i:number)=>{ const on=sel.includes(String(p.id)); const cover=p.photos?.[0]; const closedThatDay=dayDate && tripClosedOnDate(p.opening_hours||'', dayDate); return (
               <button key={p.id} onClick={()=>toggle(String(p.id))} style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 14px', background:'none', border:'none', borderBottom:i<list.length-1?'1px solid #EDE8E2':'none', cursor:'pointer', textAlign:'left' }}>
                 <div style={{ width:22, height:22, borderRadius:'50%', flexShrink:0, border:on?'none':'1.5px solid #C9C4BE', background:on?'#000':'none', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13 }}>{on?'✓':''}</div>
+                {cover ? (
+                  <div style={{ width:42, height:42, borderRadius:9, overflow:'hidden', flexShrink:0 }}><img src={cover} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /></div>
+                ) : (
+                  <div style={{ width:42, height:42, borderRadius:9, background:STATUS_CFG[p.status]?.iconBg||'#EDE8E2', color:STATUS_CFG[p.status]?.iconColor||'#3C3C43', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>{STATUS_CFG[p.status]?.mark||'○'}</div>
+                )}
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:14, fontWeight:600, color:'#000' }}>{p.name}</div>
                   <div style={{ fontSize:11, color:'#8E8E93' }}>{[p.city,p.district,p.neighborhood].filter(Boolean).join(' · ')}{p.types?.[0]?' · '+p.types[0]:''}</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:3 }}>
+                    {p.rating>0 && <span style={{ fontSize:10, color:'#FF2D55' }}>{'♥'.repeat(p.rating)}</span>}
+                    {closedThatDay && <span style={{ padding:'1px 7px', borderRadius:20, fontSize:10, fontWeight:600, background:'#F5E2E0', color:'#A85550' }}>⚠️ 這天公休</span>}
+                  </div>
                 </div>
               </button>
             ); })}
@@ -3355,6 +3412,8 @@ function TripDetail({ trip, places, onBack, onSaveDays, onEditTrip, onOpenPlace 
   const [activeIdx,setActiveIdx]=useState(0);
   const [editing,setEditing]=useState<any>(null);
   const [picking,setPicking]=useState(false);
+  const [lightbox,setLightbox]=useState<{photos:string[],index:number}|null>(null);
+  const lbStartX=useRef(0);
   const [dragIdx,setDragIdx]=useState<number|null>(null);
   const [overIdx,setOverIdx]=useState<number|null>(null);
   const [dragY,setDragY]=useState(0);
@@ -3367,6 +3426,8 @@ function TripDetail({ trip, places, onBack, onSaveDays, onEditTrip, onOpenPlace 
   const items=day.items||[];
 
   function saveItems(newItems:any[]){ const nd=days.map((d:any,i:number)=>i===activeIdx?{...d,items:newItems}:d); onSaveDays(trip.id,nd); }
+  // 寫回「指定某幾天」的 items（換天用）
+  function setDaysItems(mut:(copy:any[])=>void){ const copy=days.map((d:any)=>({...d, items:[...(d.items||[])]})); mut(copy); onSaveDays(trip.id, copy); }
 
   function dStart(e:any,i:number){ startY.current=e.touches[0].clientY; setDragIdx(i); setOverIdx(i); setDragY(0); }
   function dMove(e:any){ if(dragIdx===null) return; e.preventDefault(); const y=e.touches[0].clientY; setDragY(y-startY.current); let over=items.length-1; for(let i=0;i<rowRefs.current.length;i++){ const el=rowRefs.current[i]; if(!el) continue; const r=el.getBoundingClientRect(); if(y < r.top + r.height/2){ over=i; break; } } setOverIdx(over); }
@@ -3374,13 +3435,32 @@ function TripDetail({ trip, places, onBack, onSaveDays, onEditTrip, onOpenPlace 
 
   function openEdit(it:any, idx:number){ setEditing({ idx, kind:it.kind, item:it }); }
   function saveEditing(vals:any){
-    if(editing.isNew){ saveItems([...items, { id:tripUid(), kind:'custom', ...vals }]); }
-    else { saveItems(items.map((it:any,i:number)=>i===editing.idx?{...it,...vals}:it)); }
+    const targetDate = vals.date || day.date;
+    const fields:any = (editing.kind==='custom')
+      ? { time:vals.time, title:vals.title, address:vals.address, note:vals.note, photos:vals.photos }
+      : { time:vals.time, note:vals.note, photos:vals.photos };
+    const tIdx = days.findIndex((d:any)=>d.date===targetDate);
+    setDaysItems((copy)=>{
+      const di=copy.findIndex((d:any)=>d.date===day.date);
+      const ti=copy.findIndex((d:any)=>d.date===targetDate);
+      if(editing.isNew){
+        const ni={ id:tripUid(), kind:'custom', ...fields };
+        copy[ti].items = sortItemsByTime([...(copy[ti].items||[]), ni]);
+      } else if(ti===di || ti<0){
+        copy[di].items[editing.idx] = { ...copy[di].items[editing.idx], ...fields };
+        copy[di].items = sortItemsByTime(copy[di].items);
+      } else {
+        const moved = { ...copy[di].items[editing.idx], ...fields };
+        copy[di].items.splice(editing.idx,1);
+        copy[ti].items = sortItemsByTime([...(copy[ti].items||[]), moved]);
+      }
+    });
+    if(tIdx>=0 && tIdx!==activeIdx) setActiveIdx(tIdx);
     setEditing(null);
   }
   function deleteEditing(){ saveItems(items.filter((_:any,i:number)=>i!==editing.idx)); setEditing(null); }
 
-  function addPlaces(ids:string[]){ const add=ids.map(id=>({ id:tripUid(), kind:'place', place_id:id, time:'', note:'', photos:[] })); saveItems([...items, ...add]); setPicking(false); }
+  function addPlaces(ids:string[]){ const add=ids.map(id=>({ id:tripUid(), kind:'place', place_id:id, time:'', note:'', photos:[] })); saveItems(sortItemsByTime([...items, ...add])); setPicking(false); }
 
   return (
     <div style={{ minHeight:'100vh', background:'#F5F0EB' }}>
@@ -3401,43 +3481,64 @@ function TripDetail({ trip, places, onBack, onSaveDays, onEditTrip, onOpenPlace 
       </div>
 
       <div style={{ padding:'14px 16px 40px' }}>
-        <div style={{ fontSize:DAY_LABEL_SIZE, fontWeight:600, color:'#000', letterSpacing:0.3, marginBottom:12, padding:'0 2px' }}>Day {activeIdx+1}</div>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, padding:'0 2px' }}>
+          <div style={{ fontSize:DAY_LABEL_SIZE, fontWeight:600, color:'#000', letterSpacing:0.3 }}>Day {activeIdx+1}</div>
+          {items.length>1 && <button onClick={()=>saveItems(sortItemsByTime(items))} style={{ background:'none', border:'none', color:'#8E8E93', fontSize:12, cursor:'pointer', padding:0 }}>⇅ 依時間排序</button>}
+        </div>
 
         {items.length===0 && <div style={{ padding:'24px 0 8px', textAlign:'center', color:'#B4B2A9', fontSize:13 }}>這天還沒有安排，從下面加入吧</div>}
 
         {items.map((it:any,idx:number)=>{
           const resolved=tripResolveItem(it, places, trip);
-          const isPlace=it.kind==='place';
+          const isPlace=it.kind==='place' && !resolved._missing;
           const isFirst=idx===0, isLast=idx===items.length-1;
-          const next=items[idx+1]?tripResolveItem(items[idx+1],places,trip):null;
-          const showNav = next && next._ok && resolved._ok;
           const app=tripNavApp(trip.country);
           const dragging=dragIdx===idx;
           const lineStyle:any = isLast ? { top:0, height:16 } : { top: isFirst?16:0, bottom:0 };
+          // 這一站要不要顯示導航：收藏一律可；自訂要有地址
+          const navOk = resolved._ok;
+          // 找前一個有地點的站當作 Google 路線的起點
+          let prevResolved:any=null;
+          for(let j=idx-1;j>=0;j--){ const r=tripResolveItem(items[j],places,trip); if(r._ok){ prevResolved=r; break; } }
+          // 這天公休？
+          const closedThisDay = isPlace && resolved.opening_hours && tripClosedOnDate(resolved.opening_hours, day.date);
+          const cover = isPlace && resolved.photos?.[0];
           return (
             <div key={it.id} ref={el=>{ rowRefs.current[idx]=el; }} style={{ display:'flex', alignItems:'stretch', transform:dragging?`translateY(${dragY}px)`:'none', opacity:dragging?0.92:1, position:'relative', zIndex:dragging?20:1 }}>
-              <div style={{ width:40, flexShrink:0, textAlign:'right', paddingRight:9, paddingTop:11, fontSize:11, color:'#8E8E93' }}>{it.time||''}</div>
+              <div style={{ width:40, flexShrink:0, textAlign:'right', paddingRight:9, paddingTop:13, fontSize:11, color:'#8E8E93' }}>{it.time||''}</div>
               <div style={{ width:16, flexShrink:0, position:'relative' }}>
                 {items.length>1 && <div style={{ position:'absolute', left:'50%', transform:'translateX(-50%)', width:1.5, background:'#E2DCD2', ...lineStyle }} />}
-                <div style={{ position:'absolute', left:'50%', top:13, transform:'translateX(-50%)', width:9, height:9, borderRadius:'50%', background:isLast?'#C9BBA8':'#B9AC98', boxShadow:'0 0 0 3px #F5F0EB', border:isLast?'1.5px solid #fff':'none' }} />
+                <div style={{ position:'absolute', left:'50%', top:15, transform:'translateX(-50%)', width:9, height:9, borderRadius:'50%', background:closedThisDay?'#D98B85':(isLast?'#C9BBA8':'#B9AC98'), boxShadow:'0 0 0 3px #F5F0EB', border:isLast?'1.5px solid #fff':'none' }} />
               </div>
               <div style={{ flex:1, minWidth:0, paddingBottom:6 }}>
-                <div style={{ background:'#FDF8F3', borderRadius:12, padding:'11px 12px', display:'flex', alignItems:'flex-start', gap:8 }}>
-                  <button onClick={()=>openEdit(it,idx)} style={{ flex:1, minWidth:0, background:'none', border:'none', textAlign:'left', cursor:'pointer', padding:0 }}>
-                    <div style={{ fontSize:14, fontWeight:600, color:resolved._missing?'#B4B2A9':'#000' }}>{resolved.name}</div>
-                    <div style={{ fontSize:11, color:'#8E8E93', marginTop:2 }}>{isPlace?[resolved.district,resolved.neighborhood,resolved.types?.[0]].filter(Boolean).join(' · '):(it.address?it.address:'自訂行程')}</div>
-                    {it.note && <div style={{ fontSize:12, color:'#5F5E5A', marginTop:7 }}>📝 {it.note}</div>}
-                    {(it.photos&&it.photos.length>0) && (
-                      <div style={{ display:'flex', gap:6, marginTop:8 }}>
-                        {it.photos.slice(0,4).map((p:string,pi:number)=>(<div key={pi} style={{ width:42, height:42, borderRadius:7, overflow:'hidden' }}><img src={p} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /></div>))}
-                      </div>
-                    )}
-                  </button>
-                  <span onTouchStart={e=>dStart(e,idx)} onTouchMove={dMove} onTouchEnd={dEnd} style={{ fontSize:17, color:'#C7C7CC', padding:'2px 4px', touchAction:'none', cursor:'grab' }}>⠿</span>
+                <div style={{ background:'#FDF8F3', borderRadius:12, padding:'11px 12px', display:'flex', alignItems:'flex-start', gap:10 }}>
+                  <div onClick={()=> isPlace ? onOpenPlace(resolved) : openEdit(it,idx) } style={{ flex:1, minWidth:0, textAlign:'left', cursor:'pointer', display:'flex', gap:11, alignItems:'flex-start' }}>
+                    {isPlace && (cover ? (
+                      <div style={{ width:42, height:42, borderRadius:9, overflow:'hidden', flexShrink:0 }}><img src={cover} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /></div>
+                    ) : (
+                      <div style={{ width:42, height:42, borderRadius:9, background:STATUS_CFG[resolved.status]?.iconBg||'#EDE8E2', color:STATUS_CFG[resolved.status]?.iconColor||'#3C3C43', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>{STATUS_CFG[resolved.status]?.mark||'○'}</div>
+                    ))}
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, fontWeight:600, color:resolved._missing?'#B4B2A9':'#000' }}>{resolved.name}</div>
+                      <div style={{ fontSize:11, color:'#8E8E93', marginTop:2 }}>{isPlace?([resolved.city,resolved.district,resolved.neighborhood,resolved.types?.[0]].filter(Boolean).join(' · ')||'收藏'):(it.address?it.address:'自訂行程')}</div>
+                      {isPlace && resolved.rating>0 && <div style={{ fontSize:11, color:'#FF2D55', marginTop:3 }}>{'♥'.repeat(resolved.rating)}{'♡'.repeat(5-resolved.rating)}</div>}
+                      {closedThisDay && <span style={{ display:'inline-block', marginTop:5, padding:'2px 8px', borderRadius:20, fontSize:10, fontWeight:600, background:'#F5E2E0', color:'#A85550' }}>⚠️ 這天公休（週{TRIP_WD_ZH[tripParseDate(day.date).getDay()]}）</span>}
+                      {it.note && <div style={{ fontSize:12, color:'#5F5E5A', marginTop:7, whiteSpace:'pre-line' }}>📝 {it.note}</div>}
+                      {(it.photos&&it.photos.length>0) && (
+                        <div style={{ display:'flex', gap:6, marginTop:8 }}>
+                          {it.photos.slice(0,4).map((p:string,pi:number)=>(<div key={pi} onClick={(e)=>{ e.stopPropagation(); setLightbox({photos:it.photos,index:pi}); }} style={{ width:42, height:42, borderRadius:7, overflow:'hidden', cursor:'pointer' }}><img src={p} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /></div>))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, flexShrink:0 }}>
+                    {isPlace && <button onClick={()=>openEdit(it,idx)} style={{ background:'none', border:'none', color:'#8E8E93', fontSize:15, cursor:'pointer', padding:0 }} title="編輯這趟的時間/備註">✎</button>}
+                    <span onTouchStart={e=>dStart(e,idx)} onTouchMove={dMove} onTouchEnd={dEnd} style={{ fontSize:17, color:'#C7C7CC', padding:'0 2px', touchAction:'none', cursor:'grab' }}>⠿</span>
+                  </div>
                 </div>
-                {showNav && (
+                {navOk && (
                   <div style={{ padding:'7px 0 1px' }}>
-                    <a href={tripNavUrl(resolved, next, trip.country)} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:5, background:app.bg, color:app.color, fontSize:11, padding:'4px 11px', borderRadius:13, textDecoration:'none' }}>➜ {app.name} 導航到下一站</a>
+                    <a href={tripNavUrl(prevResolved, resolved, trip.country)} target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:5, background:app.bg, color:app.color, fontSize:11, padding:'4px 11px', borderRadius:13, textDecoration:'none' }}>➜ {app.name} 導航</a>
                   </div>
                 )}
               </div>
@@ -3453,10 +3554,26 @@ function TripDetail({ trip, places, onBack, onSaveDays, onEditTrip, onOpenPlace 
 
       {editing && (
         <TripItemEditor item={editing.item} kind={editing.kind}
+          days={days} currentDate={day.date}
           onClose={()=>setEditing(null)} onSave={saveEditing}
           onDelete={editing.isNew?null:deleteEditing} />
       )}
-      {picking && <TripPlacePicker places={places} trip={trip} onClose={()=>setPicking(false)} onConfirm={addPlaces} />}
+      {picking && <TripPlacePicker places={places} trip={trip} dayDate={day.date} onClose={()=>setPicking(false)} onConfirm={addPlaces} />}
+
+      {lightbox && (
+        <div onClick={()=>setLightbox(null)}
+          onTouchStart={e=>{ lbStartX.current=e.touches[0].clientX; }}
+          onTouchEnd={e=>{ const dx=e.changedTouches[0].clientX-lbStartX.current; if(Math.abs(dx)>50){ const ni=dx<0?Math.min(lightbox.index+1,lightbox.photos.length-1):Math.max(lightbox.index-1,0); setLightbox({...lightbox,index:ni}); } else { setLightbox(null); } }}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.95)', zIndex:300, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+          <img src={lightbox.photos[lightbox.index]} alt="" style={{ maxWidth:'100%', maxHeight:'85%', objectFit:'contain' }} />
+          {lightbox.photos.length>1 && (
+            <div style={{ display:'flex', gap:6, marginTop:12 }}>
+              {lightbox.photos.map((_:string,i:number)=>(<div key={i} onClick={e=>{ e.stopPropagation(); setLightbox({...lightbox,index:i}); }} style={{ width:8, height:8, borderRadius:'50%', background:i===lightbox.index?'#fff':'rgba(255,255,255,0.4)' }} />))}
+            </div>
+          )}
+          <div style={{ position:'absolute', top:'calc(env(safe-area-inset-top) + 16px)', right:20, color:'#fff', fontSize:14, opacity:0.7 }}>{lightbox.index+1} / {lightbox.photos.length}</div>
+        </div>
+      )}
     </div>
   );
 }
