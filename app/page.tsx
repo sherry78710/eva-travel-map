@@ -1100,7 +1100,8 @@ function Settings({ countries, types, countryOrder, geoData, showNextTrip, onTog
       </div>
 
       <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"16px 20px 40px" }}>
-        <div style={{ background:"#FDF8F3", borderRadius:16, padding:"14px 16px", marginBottom:16, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ fontSize:11, color:"#8E8E93", letterSpacing:0.5, textTransform:"uppercase", marginBottom:8, paddingLeft:2 }}>顯示</div>
+        <div style={{ background:"#FDF8F3", borderRadius:16, padding:"14px 16px", marginBottom:8, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div>
             <div style={{ fontSize:15, color:"#000" }}>在首頁顯示下一趟行程</div>
             <div style={{ fontSize:12, color:"#8E8E93", marginTop:2 }}>關閉後首頁只保留「行程」按鈕</div>
@@ -1109,6 +1110,7 @@ function Settings({ countries, types, countryOrder, geoData, showNextTrip, onTog
             <span style={{ position:"absolute", top:3, left:showNextTrip?23:3, width:24, height:24, borderRadius:"50%", background:"#fff", boxShadow:"0 1px 3px rgba(0,0,0,0.3)", transition:"left 0.2s" }} />
           </button>
         </div>
+        <div style={{ height:1, background:"#EDE8E2", margin:"16px 0" }} />
         {/* ── 國家與商圈 ── */}
         {tab==="countries" && (
           <>
@@ -2693,7 +2695,7 @@ function DRow({ label, value }) {
 // ── Search ────────────────────────────────────────────────────────────────────
 function Search({ places, onBack, onSelect }) {
   const [q,setQ]=useState(""); const [fS,setFS]=useState(""); const [fT,setFT]=useState("");
-  const filtered=places.filter(p=>{ const lq=q.toLowerCase(); const mQ=!q||[p.name,p.neighborhood,p.city,p.country,p.note||"",...(p.recommendations||[])].some(s=>s.toLowerCase().includes(lq)); return mQ&&(!fS||p.status===fS)&&(!fT||p.types?.includes(fT)); });
+  const filtered=places.filter(p=>{ const lq=q.toLowerCase(); const mQ=!q||[p.name,p.neighborhood,p.district,p.city,p.country,p.note||"",...(p.types||[]),...(p.recommendations||[])].filter(Boolean).some((s:any)=>String(s).toLowerCase().includes(lq)); return mQ&&(!fS||p.status===fS)&&(!fT||p.types?.includes(fT)); });
   return (
     <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
       <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 12px)", paddingBottom:"12px", paddingLeft:"16px", paddingRight:"16px" }}>
@@ -2726,13 +2728,29 @@ function Search({ places, onBack, onSelect }) {
 }
 
 // ── Notes ─────────────────────────────────────────────────────────────────────
-function Notes({ onBack, countries, noteCats, onUpdateNoteCats }) {
+const DEFAULT_NOTE_CATS = ["入境","交通","退稅","禮儀","緊急聯絡","其他"];
+
+// 把文字裡的網址變成可點連結（保留換行交給 white-space: pre-line）
+function renderNoteContent(text:string){
+  const str = text||"";
+  const re = /(https?:\/\/[^\s]+)/g;
+  const out:any[] = [];
+  let last = 0; let m:any; let k = 0;
+  while((m = re.exec(str)) !== null){
+    if(m.index>last) out.push(<span key={k++}>{str.slice(last,m.index)}</span>);
+    out.push(<a key={k++} href={m[0]} target="_blank" rel="noreferrer" style={{ color:"#007AFF", wordBreak:"break-all" }}>{m[0]}</a>);
+    last = m.index + m[0].length;
+  }
+  if(last<str.length) out.push(<span key={k++}>{str.slice(last)}</span>);
+  return out;
+}
+
+function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats }) {
   const [country,setCountry]=useState(countries[0]||"韓國");
   const [notes,setNotes]=useState<any[]>([]);
   const [loading,setLoading]=useState(true);
-  const [cats,setCats]=useState<string[]>(noteCats||["入境","交通","退稅","禮儀","緊急聯絡","其他"]);
   const [adding,setAdding]=useState(false);
-  const [newCat,setNewCat]=useState(noteCats?.[0]||"入境");
+  const [newCat,setNewCat]=useState("");
   const [newContent,setNewContent]=useState("");
   const [newPhotos,setNewPhotos]=useState<string[]>([]);
   const [editingNote,setEditingNote]=useState<any>(null);
@@ -2741,19 +2759,28 @@ function Notes({ onBack, countries, noteCats, onUpdateNoteCats }) {
   const [saving,setSaving]=useState(false);
   const [editSaving,setEditSaving]=useState(false);
   const [lightbox,setLightbox]=useState<{photos:string[],index:number}|null>(null);
+  const [catMgr,setCatMgr]=useState(false);
   const photoInputRef=useRef<HTMLInputElement>(null);
   const editPhotoInputRef=useRef<HTMLInputElement>(null);
   const lightboxStartX=useRef(0);
 
-  // 載入備忘錄
+  // 目前國家的類別（沒有自訂就用預設）
+  const cats:string[] = (noteCatsByCountry?.[country]?.length) ? noteCatsByCountry[country] : DEFAULT_NOTE_CATS;
+
+  // 進到某國家時，確保新增表單的類別有效
+  useEffect(()=>{ setNewCat(cats[0]||""); }, [country]);
+
+  // 載入備忘錄（依 sort_order，再依建立時間）
   useEffect(()=>{
-    sb.from('country_notes').select('*').order('created_at',{ascending:false})
+    sb.from('country_notes').select('*').order('sort_order',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false})
       .then(({data})=>{ if(data) setNotes(data); setLoading(false); });
   },[]);
 
   const filtered=notes.filter(n=>n.country===country);
   const grouped:any={};
   filtered.forEach(n=>{ if(!grouped[n.category]) grouped[n.category]=[]; grouped[n.category].push(n); });
+  // 類別順序：先照自訂類別清單，剩下的（例如已刪除的類別但還有舊備忘）接在後面
+  const orderedCats = [...cats, ...Object.keys(grouped).filter(c=>!cats.includes(c))].filter(c=>grouped[c]);
 
   async function handlePhotoAdd(e:any, setter:any) {
     const files=Array.from(e.target.files||[]);
@@ -2762,10 +2789,7 @@ function Notes({ onBack, countries, noteCats, onUpdateNoteCats }) {
       const compressed = await compressImage(file);
       const path = `notes/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
       const { error } = await sb.storage.from('photos').upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
-      if(!error){
-        const { data } = sb.storage.from('photos').getPublicUrl(path);
-        urls.push(data.publicUrl);
-      }
+      if(!error){ const { data } = sb.storage.from('photos').getPublicUrl(path); urls.push(data.publicUrl); }
     }
     if(urls.length>0) setter(urls);
     e.target.value="";
@@ -2774,7 +2798,7 @@ function Notes({ onBack, countries, noteCats, onUpdateNoteCats }) {
   async function handleSave() {
     if((!newContent.trim() && newPhotos.length===0) || saving) return;
     setSaving(true);
-    const payload={country, category:newCat, content:newContent.trim(), photos:newPhotos};
+    const payload={country, category:newCat||cats[0]||"其他", content:newContent.trim(), photos:newPhotos, sort_order:Date.now()};
     const {data,error}=await sb.from('country_notes').insert([payload]).select().single();
     if(!error&&data){ setNotes(ns=>[data,...ns]); }
     setNewContent(""); setNewPhotos([]); setAdding(false);
@@ -2797,15 +2821,37 @@ function Notes({ onBack, countries, noteCats, onUpdateNoteCats }) {
     setEditSaving(false);
   }
 
+  // 新增類別（加進「目前國家」的清單）
   function addCat() {
     const c=newCatInput.trim();
-    if(c&&!cats.includes(c)){
-      const newCats=[...cats,c];
-      setCats(newCats);
-      setNewCat(c);
-      if(onUpdateNoteCats) onUpdateNoteCats(newCats);
-    }
+    if(c && !cats.includes(c)) onUpdateCats(country, [...cats, c]);
+    setNewCat(c||newCat);
     setNewCatInput(""); setShowCatInput(false);
+  }
+
+  // ── 備忘錄卡片拖拉排序（同一類別內）──
+  const [dragId,setDragId]=useState<string|null>(null);
+  const [dragCat,setDragCat]=useState<string|null>(null);
+  const [dragY,setDragY]=useState(0);
+  const dragStartY=useRef(0);
+  const noteRefs=useRef<any>({});
+  function noteDStart(e:any, cat:string, id:string){ dragStartY.current=e.touches[0].clientY; setDragId(id); setDragCat(cat); setDragY(0); }
+  function noteDMove(e:any){ if(!dragId||!dragCat) return; e.preventDefault(); setDragY(e.touches[0].clientY-dragStartY.current); }
+  async function noteDEnd(e:any){
+    if(!dragId||!dragCat){ return; }
+    const y=e.changedTouches[0].clientY;
+    const arr=[...(grouped[dragCat]||[])];
+    const from=arr.findIndex((n:any)=>n.id===dragId);
+    let to=arr.length-1;
+    for(let i=0;i<arr.length;i++){ const el=noteRefs.current[arr[i].id]; if(!el) continue; const r=el.getBoundingClientRect(); if(y < r.top + r.height/2){ to=i; break; } }
+    setDragId(null); setDragCat(null); setDragY(0);
+    if(from<0||from===to) return;
+    const [mv]=arr.splice(from,1); arr.splice(to,0,mv);
+    // 重新指派 sort_order（由上而下遞減，最上面最大）
+    const base=Date.now();
+    const updated=arr.map((n:any,i:number)=>({ ...n, sort_order: base-i }));
+    setNotes(ns=>ns.map(n=>{ const u=updated.find((x:any)=>x.id===n.id); return u?u:n; }));
+    await Promise.all(updated.map((n:any)=>sb.from('country_notes').update({sort_order:n.sort_order}).eq('id',n.id)));
   }
 
   return (
@@ -2815,7 +2861,7 @@ function Notes({ onBack, countries, noteCats, onUpdateNoteCats }) {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0 20px 12px"}}>
           <button onClick={onBack} style={{background:"none",border:"none",color:"#007AFF",fontSize:16,cursor:"pointer",padding:0}}>‹ 返回</button>
           <div style={{fontSize:17,fontWeight:600}}>國家備忘錄</div>
-          <button onClick={()=>{setAdding(a=>!a);setNewContent("");setNewPhotos([]);}} style={{background:"none",border:"none",color:"#007AFF",fontSize:24,cursor:"pointer",padding:0,lineHeight:1}}>+</button>
+          <button onClick={()=>{setAdding(a=>!a);setNewContent("");setNewPhotos([]);setNewCat(cats[0]||"");}} style={{background:"none",border:"none",color:"#007AFF",fontSize:24,cursor:"pointer",padding:0,lineHeight:1}}>+</button>
         </div>
         <div style={{display:"flex",overflowX:"auto",borderTop:"1px solid #EDE8E2"}}>
           {countries.map(c=>(
@@ -2827,10 +2873,14 @@ function Notes({ onBack, countries, noteCats, onUpdateNoteCats }) {
       {/* 滾動區域 */}
       <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"12px 20px 40px"}}>
 
+        {/* 管理類別入口 */}
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
+          <button onClick={()=>setCatMgr(true)} style={{background:"none",border:"none",color:"#8E8E93",fontSize:13,cursor:"pointer",padding:0}}>⚙ 管理 {country} 類別</button>
+        </div>
+
         {/* 新增表單 */}
         {adding && (
           <div style={{background:"#FDF8F3",borderRadius:16,padding:14,marginBottom:12}}>
-            {/* 類別選擇 */}
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
               {cats.map(c=>(
                 <button key={c} onClick={()=>setNewCat(c)} style={{padding:"5px 12px",borderRadius:20,border:"none",background:newCat===c?"#000":"#EDE8E2",color:newCat===c?"white":"#3C3C43",fontSize:13,cursor:"pointer"}}>{c}</button>
@@ -2843,10 +2893,8 @@ function Notes({ onBack, countries, noteCats, onUpdateNoteCats }) {
                 <button onClick={addCat} style={{padding:"7px 14px",border:"none",borderRadius:8,background:"#000",color:"white",fontSize:13,cursor:"pointer"}}>新增</button>
               </div>
             )}
-            {/* 內容 */}
-            <textarea value={newContent} onChange={e=>setNewContent(e.target.value)} placeholder="寫下備忘事項..." rows={3}
-              style={{width:"100%",border:"none",borderRadius:10,padding:"10px 12px",fontSize:15,color:"#000",outline:"none",background:"#F5F0EB",resize:"none",fontFamily:"inherit",boxSizing:"border-box",marginBottom:10}} />
-            {/* 照片 */}
+            <textarea value={newContent} onChange={e=>setNewContent(e.target.value)} placeholder="寫下備忘事項...（可換行、貼網址）" rows={4}
+              style={{width:"100%",border:"none",borderRadius:10,padding:"10px 12px",fontSize:15,color:"#000",outline:"none",background:"#F5F0EB",resize:"none",fontFamily:"inherit",boxSizing:"border-box",marginBottom:10,lineHeight:1.6}} />
             <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
               {newPhotos.map((p,i)=>(
                 <div key={i} style={{position:"relative",width:64,height:64,borderRadius:8,overflow:"hidden",flexShrink:0}}>
@@ -2877,8 +2925,8 @@ function Notes({ onBack, countries, noteCats, onUpdateNoteCats }) {
                   <button key={c} onClick={()=>setEditingNote((n:any)=>({...n,category:c}))} style={{padding:"5px 12px",borderRadius:20,border:"none",background:editingNote.category===c?"#000":"#EDE8E2",color:editingNote.category===c?"white":"#3C3C43",fontSize:13,cursor:"pointer"}}>{c}</button>
                 ))}
               </div>
-              <textarea value={editingNote.content} onChange={e=>setEditingNote((n:any)=>({...n,content:e.target.value}))} rows={4}
-                style={{width:"100%",border:"none",borderRadius:10,padding:"10px 12px",fontSize:15,color:"#000",outline:"none",background:"#F5F0EB",resize:"none",fontFamily:"inherit",boxSizing:"border-box",marginBottom:10}} />
+              <textarea value={editingNote.content} onChange={e=>setEditingNote((n:any)=>({...n,content:e.target.value}))} rows={5}
+                style={{width:"100%",border:"none",borderRadius:10,padding:"10px 12px",fontSize:15,color:"#000",outline:"none",background:"#F5F0EB",resize:"none",fontFamily:"inherit",boxSizing:"border-box",marginBottom:10,lineHeight:1.6}} />
               <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
                 {(editingNote.photos||[]).map((p:string,i:number)=>(
                   <div key={i} style={{position:"relative",width:64,height:64,borderRadius:8,overflow:"hidden",flexShrink:0}}>
@@ -2900,20 +2948,30 @@ function Notes({ onBack, countries, noteCats, onUpdateNoteCats }) {
           </div>
         )}
 
+        {/* 類別管理 Modal */}
+        {catMgr && (
+          <CatManager country={country} cats={cats} grouped={grouped} onClose={()=>setCatMgr(false)} onChange={(list:string[])=>onUpdateCats(country, list)} />
+        )}
+
         {/* 備忘錄列表 */}
         {loading && <div style={{textAlign:"center",padding:"40px 0",color:"#8E8E93"}}>載入中...</div>}
         {!loading && filtered.length===0 && <div style={{textAlign:"center",padding:"60px 0",color:"#8E8E93",fontSize:15}}>還沒有 {country} 的備忘錄</div>}
-        {Object.entries(grouped).map(([cat,catNotes]:any)=>(
+        {orderedCats.map((cat:string)=>{
+          const catNotes=grouped[cat];
+          return (
           <div key={cat} style={{marginBottom:14}}>
             <div style={{fontSize:11,color:"#8E8E93",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>{cat}</div>
             <div style={{background:"#FDF8F3",borderRadius:16,overflow:"hidden"}}>
-              {catNotes.map((n:any,i:number)=>(
-                <div key={n.id} style={{padding:"14px 16px",borderBottom:i<catNotes.length-1?"1px solid #EDE8E2":"none"}}>
-                  <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
-                    <div style={{flex:1,fontSize:15,color:"#000",lineHeight:1.5}}>{n.content}</div>
-                    <div style={{display:"flex",gap:8,flexShrink:0}}>
+              {catNotes.map((n:any,i:number)=>{
+                const dragging=dragId===n.id;
+                return (
+                <div key={n.id} ref={el=>{ noteRefs.current[n.id]=el; }} style={{padding:"14px 16px",borderBottom:i<catNotes.length-1?"1px solid #EDE8E2":"none",background:dragging?"#F1ECE5":"#FDF8F3",transform:dragging?`translateY(${dragY}px)`:"none",opacity:dragging?0.92:1,position:"relative",zIndex:dragging?20:1}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                    <div style={{flex:1,fontSize:15,color:"#000",lineHeight:1.6,whiteSpace:"pre-line",wordBreak:"break-word"}}>{renderNoteContent(n.content)}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                       <button onClick={()=>setEditingNote({...n,photos:n.photos||[]})} style={{background:"none",border:"none",color:"#007AFF",fontSize:13,cursor:"pointer",padding:0}}>編輯</button>
                       <button onClick={()=>handleDelete(n.id)} style={{background:"none",border:"none",color:"#C7C7CC",fontSize:18,cursor:"pointer",padding:0}}>×</button>
+                      <span onTouchStart={e=>noteDStart(e,cat,n.id)} onTouchMove={noteDMove} onTouchEnd={noteDEnd} style={{fontSize:17,color:"#C7C7CC",padding:"0 2px",touchAction:"none",cursor:"grab"}}>⠿</span>
                     </div>
                   </div>
                   {(n.photos||[]).length>0 && (
@@ -2926,10 +2984,12 @@ function Notes({ onBack, countries, noteCats, onUpdateNoteCats }) {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* 照片放大 — 左右滑動 */}
@@ -2962,6 +3022,59 @@ function Notes({ onBack, countries, noteCats, onUpdateNoteCats }) {
           <div style={{position:"absolute",top:20,right:20,color:"white",fontSize:14,opacity:0.7}}>{lightbox.index+1} / {lightbox.photos.length}</div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 類別管理（拖拉排序 + 刪除 + 新增）──────────────────────────────────────
+function CatManager({ country, cats, grouped, onClose, onChange }:any){
+  const [list,setList]=useState<string[]>(cats);
+  const [input,setInput]=useState("");
+  const [dragIdx,setDragIdx]=useState<number|null>(null);
+  const [overIdx,setOverIdx]=useState<number|null>(null);
+  const [dragY,setDragY]=useState(0);
+  const startY=useRef(0);
+  const ITEM_H=50;
+  function commit(next:string[]){ setList(next); onChange(next); }
+  function add(){ const c=input.trim(); if(c&&!list.includes(c)) commit([...list,c]); setInput(""); }
+  function del(c:string){ commit(list.filter(x=>x!==c)); }
+  function dStart(e:any,i:number){ e.preventDefault(); startY.current=e.touches[0].clientY; setDragIdx(i); setOverIdx(i); setDragY(0); }
+  function dMove(e:any){ if(dragIdx===null) return; e.preventDefault(); const dy=e.touches[0].clientY-startY.current; setDragY(dy); setOverIdx(Math.max(0,Math.min(list.length-1,dragIdx+Math.round(dy/ITEM_H)))); }
+  function dEnd(){ if(dragIdx!==null&&overIdx!==null&&dragIdx!==overIdx){ const a=[...list]; const [m]=a.splice(dragIdx,1); a.splice(overIdx,0,m); commit(a); } setDragIdx(null); setOverIdx(null); setDragY(0); }
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:150,display:"flex",alignItems:"flex-end"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",background:"#F5F0EB",borderTopLeftRadius:20,borderTopRightRadius:20,maxHeight:"82vh",overflowY:"auto",paddingBottom:"calc(env(safe-area-inset-bottom) + 20px)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 18px 10px"}}>
+          <div style={{width:44}} />
+          <div style={{fontSize:16,fontWeight:600}}>{country} 類別</div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:"#007AFF",fontSize:16,fontWeight:600,cursor:"pointer",padding:0}}>完成</button>
+        </div>
+        <div style={{padding:"4px 18px 0"}}>
+          <div style={{fontSize:12,color:"#8E8E93",marginBottom:10}}>按住 ⠿ 拖拉排序，× 刪除。刪除類別不會刪掉已寫的備忘。</div>
+          <div style={{background:"#FDF8F3",borderRadius:14,overflow:"hidden",marginBottom:14}}>
+            {list.map((c,i)=>{
+              const isDragging=dragIdx===i;
+              let ty=0;
+              if(dragIdx!==null && !isDragging){
+                if(dragIdx<(overIdx||0) && i>dragIdx && i<=(overIdx||0)) ty=-ITEM_H;
+                else if(dragIdx>(overIdx||0) && i<dragIdx && i>=(overIdx||0)) ty=ITEM_H;
+              }
+              const count=(grouped[c]||[]).length;
+              return (
+                <div key={c} style={{display:"flex",alignItems:"center",padding:"0 14px",height:ITEM_H,borderBottom:i<list.length-1?"1px solid #EDE8E2":"none",background:isDragging?"#F1ECE5":"#FDF8F3",transform:isDragging?`translateY(${dragY}px) scale(1.02)`:`translateY(${ty}px)`,transition:isDragging?"none":"transform 0.2s ease",position:"relative",zIndex:isDragging?10:1}}>
+                  <span style={{flex:1,fontSize:15,color:"#000"}}>{c}{count>0?<span style={{fontSize:12,color:"#C7C7CC",marginLeft:6}}>{count}</span>:null}</span>
+                  <button onClick={()=>del(c)} style={{background:"none",border:"none",color:"#FF3B30",fontSize:13,cursor:"pointer",padding:"0 10px"}}>刪除</button>
+                  <span onTouchStart={e=>dStart(e,i)} onTouchMove={dMove} onTouchEnd={dEnd} style={{fontSize:18,color:"#C7C7CC",padding:"0 4px",touchAction:"none",cursor:"grab"}}>⠿</span>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <input value={input} onChange={e=>setInput(e.target.value)} placeholder="新增類別名稱" style={{flex:1,border:"none",borderRadius:10,padding:"11px 14px",fontSize:15,outline:"none",background:"#FDF8F3",fontFamily:"inherit",color:"#000"}} />
+            <button onClick={add} style={{padding:"0 18px",border:"none",borderRadius:10,background:"#000",color:"#fff",fontSize:14,fontWeight:600,cursor:"pointer"}}>新增</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -3194,7 +3307,7 @@ function TripPlacePicker({ places, trip, onClose, onConfirm }:any){
   let base = (trip.cities&&trip.cities.length&&!whole) ? inCountry.filter((p:any)=>trip.cities.includes(p.city)) : inCountry;
   let list=base;
   if(city) list=list.filter((p:any)=>p.city===city);
-  if(q.trim()){ const k=q.trim().toLowerCase(); list=list.filter((p:any)=>(p.name||'').toLowerCase().includes(k)||(p.note||'').toLowerCase().includes(k)); }
+  if(q.trim()){ const k=q.trim().toLowerCase(); list=list.filter((p:any)=>[p.name,p.note,p.city,p.district,p.neighborhood,...(p.types||[])].filter(Boolean).some((s:string)=>String(s).toLowerCase().includes(k))); }
   const cityPills = Array.from(new Set(base.map((p:any)=>p.city).filter(Boolean)));
   function toggle(id:string){ setSel(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]); }
   return (
@@ -3351,7 +3464,8 @@ function TripDetail({ trip, places, onBack, onSaveDays, onEditTrip, onOpenPlace 
 // ── 加入旅程 彈窗（收藏詳細頁用）─────────────────────────────────────────────
 function AddToTripSheet({ trips, place, onClose, onConfirm }:any){
   const today=tripTodayStr();
-  const sorted=[...(trips||[])].sort((a:any,b:any)=>(a.start_date||'').localeCompare(b.start_date||''));
+  const sameCountry=[...(trips||[])].filter((t:any)=>t.country===place.country);
+  const sorted=sameCountry.sort((a:any,b:any)=>(a.start_date||'').localeCompare(b.start_date||''));
   const upcoming=sorted.filter((t:any)=>(t.end_date||t.start_date||'')>=today);
   const past=sorted.filter((t:any)=>(t.end_date||t.start_date||'')<today).reverse();
   const ordered=[...upcoming,...past];
@@ -3366,7 +3480,7 @@ function AddToTripSheet({ trips, place, onClose, onConfirm }:any){
           <div style={{ width:44 }} />
         </div>
         <div style={{ padding:'6px 18px 0' }}>
-          {ordered.length===0 && <div style={{ padding:'30px 0', textAlign:'center', color:'#8E8E93', fontSize:14 }}>還沒有行程，先到「行程」建立一個吧</div>}
+          {ordered.length===0 && <div style={{ padding:'30px 0', textAlign:'center', color:'#8E8E93', fontSize:14 }}>還沒有{place.country}的行程<br/><span style={{ fontSize:12, color:'#B4B2A9' }}>先到「行程」建立一個{place.country}行程吧</span></div>}
           {!trip && ordered.map((t:any)=>(
             <button key={t.id} onClick={()=>setTripId(t.id)} style={{ width:'100%', textAlign:'left', background:'#FDF8F3', borderRadius:12, padding:'13px 15px', marginBottom:9, border:'none', cursor:'pointer' }}>
               <div style={{ fontSize:15, fontWeight:600, color:'#000' }}>{t.title||'未命名行程'}</div>
@@ -3396,6 +3510,7 @@ export default function App() {
   const [countryOrder,setCountryOrder]=useState(Object.keys(GEO));
   const [types,setTypes]=useState(INIT_TYPES);
   const [noteCats,setNoteCats]=useState(["入境","交通","退稅","禮儀","緊急聯絡","其他"]);
+  const [noteCatsByCountry,setNoteCatsByCountry]=useState<any>({});
   const [geoData,setGeoData]=useState(GEO);
   const [history,setHistory]=useState(["home"]);
   const [selected,setSelected]=useState<any>(null);
@@ -3427,6 +3542,7 @@ export default function App() {
           setCountries(s.country_order);
         }
         if(s.note_cats?.length) setNoteCats(s.note_cats);
+        if(s.note_cats_by_country && typeof s.note_cats_by_country==='object' && !Array.isArray(s.note_cats_by_country)) setNoteCatsByCountry(s.note_cats_by_country);
         if(s.geo_data && Object.keys(s.geo_data).length){
           // 把儲存的自訂商圈合併進 GEO
           const merged = {...GEO};
@@ -3637,7 +3753,7 @@ export default function App() {
           {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} onAutoAddNb={autoAddNeighborhood} />}
           {page==="country"&&<CountryPage country={selectedCountry!} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
           {page==="search"&&<Search places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
-          {page==="notes"&&<Notes onBack={goBack} countries={countries} noteCats={noteCats} onUpdateNoteCats={async (cats:string[])=>{ setNoteCats(cats); await saveSettings({note_cats:cats}); }} />}
+          {page==="notes"&&<Notes onBack={goBack} countries={countries} noteCatsByCountry={noteCatsByCountry} onUpdateCats={async (country:string, list:string[])=>{ const next={...noteCatsByCountry,[country]:list}; setNoteCatsByCountry(next); await saveSettings({note_cats_by_country:next}); }} />}
           {page==="trips"&&<Trips trips={trips} onBack={goBack} onOpen={openTrip} onNew={()=>{ setEditingTrip(null); setHistory(h=>[...h,"tripForm"]); }} />}
           {page==="tripForm"&&<TripForm initial={editingTrip} countries={countries} geoData={geoData} onBack={goBack} onSave={editingTrip?handleUpdateTrip:handleAddTrip} onDelete={editingTrip?handleDeleteTrip:undefined} />}
           {page==="tripDetail"&&(()=>{ const t=trips.find(x=>x.id===selectedTripId); return t?<TripDetail trip={t} places={places} onBack={goBack} onSaveDays={handleSaveTripDays} onEditTrip={(tr:any)=>{ setEditingTrip(tr); setHistory(h=>[...h,"tripForm"]); }} onOpenPlace={(p:any)=>{ setSelected(p); setHistory(h=>[...h,"detail"]); }} />:null; })()}
