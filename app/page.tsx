@@ -691,6 +691,50 @@ function checkTodayClosed(opening_hours: string): 'closed'|'uncertain'|null {
 }
 
 
+// ── 抽出公休日標籤（用於清單/網格常態顯示）────────────────────────────────
+function getClosedDaysLabel(opening_hours: string): string|null {
+  if (!opening_hours || !opening_hours.trim()) return null;
+  const text = opening_hours;
+  if (/全年無休|每天營業|無休|7天|天天/.test(text)) return null;
+
+  const zhMap:any = {'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'日':0,'天':0};
+  const numToZh = ['日','一','二','三','四','五','六'];
+  const closed = new Set<number>();
+  let m:any;
+
+  const kwRe = /公休|定休|closed|休館|休業/gi;
+  while ((m = kwRe.exec(text)) !== null) {
+    const before = text.slice(Math.max(0, m.index - 25), m.index);
+    const rangeM = /[週周]([一二三四五六日天])[至~～－\-到][週周]([一二三四五六日天])/.exec(before);
+    if (rangeM) {
+      const s = zhMap[rangeM[1]], e = zhMap[rangeM[2]];
+      if (s !== undefined && e !== undefined) {
+        let d = s, safe = 0;
+        while (safe++ < 8) { closed.add(d); if (d === e) break; d = (d+1)%7; }
+      }
+    }
+    const dayRe = /[週周]([一二三四五六日天]+)/g;
+    let dm:any;
+    while ((dm = dayRe.exec(before)) !== null) {
+      for (const [k,v] of Object.entries(zhMap)) if (dm[1].includes(k)) closed.add(v as number);
+    }
+  }
+  // 韓文
+  const krMap:any = {'월':1,'화':2,'수':3,'목':4,'금':5,'토':6,'일':0};
+  const krNameMap:any = {1:'월요일',2:'화요일',3:'수요일',4:'목요일',5:'금요일',6:'토요일',0:'일요일'};
+  const krRe = /([월화수목금토일])요일\s*(?:휴무|휴일)/g;
+  while ((m = krRe.exec(text)) !== null) { const d=krMap[m[1]]; if(d!==undefined) closed.add(d); }
+  // 日文
+  const jpMap:any = {'月':1,'火':2,'水':3,'木':4,'金':5,'土':6,'日':0};
+  const jpRe = /([月火水木金土日])曜(?:定休|休日)/g;
+  while ((m = jpRe.exec(text)) !== null) { const d=jpMap[m[1]]; if(d!==undefined) closed.add(d); }
+
+  if (closed.size === 0) return null;
+  // 排序後組成「週X公休」
+  const days = [...closed].sort((a,b)=>a===0?7-b:b===0?a-7:a-b);
+  return '週' + days.map(d=>numToZh[d]).join('、') + '公休';
+}
+
 function PlaceIcon({ status }) {
   const s = STATUS_CFG[status];
   return <div style={{ width:44, height:44, borderRadius:12, background:s.iconBg, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, color:s.iconColor, flexShrink:0 }}>{s.mark}</div>;
@@ -714,6 +758,7 @@ function PlaceRow({ place, onClick }) {
         {place.note && <div style={{ fontSize:11, color:"#636366", marginTop:2, fontStyle:"italic" }}>{place.note}</div>}
         {closedStatus==='closed' && <span style={{ display:"inline-block", marginTop:4, padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:500, background:"#F5E6E4", color:"#A85550" }}>● 今日公休</span>}
         {closedStatus==='uncertain' && <span style={{ display:"inline-block", marginTop:4, padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:500, background:"#F0EBE4", color:"#9C8878" }}>? 公休不確定</span>}
+        {closedStatus===null && getClosedDaysLabel(place.opening_hours) && <span style={{ display:"inline-block", marginTop:4, padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:500, background:"#EDE8E2", color:"#8E8E93" }}>{getClosedDaysLabel(place.opening_hours)}</span>}
         {place.rating > 0 && (
           <div style={{ fontSize:11, color:"#FF9500", marginTop:2 }}>{"\u2665".repeat(place.rating)}{"\u2661".repeat(5-place.rating)}</div>
         )}
@@ -1271,7 +1316,7 @@ function Home({ places, countries, countryOrder, onNav, onCountry }) {
                   <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
                   <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
                   {p.note && <div style={{ fontSize:10, color:"#636366", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
-                  {(()=>{const cs=checkTodayClosed(p.opening_hours);return cs==='closed'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F5E6E4",color:"#A85550"}}>● 今日公休</span>:cs==='uncertain'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F0EBE4",color:"#9C8878"}}>? 不確定</span>:null;})()}
+                  {(()=>{const cs=checkTodayClosed(p.opening_hours);const lbl=getClosedDaysLabel(p.opening_hours);return cs==='closed'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F5E6E4",color:"#A85550"}}>● 今日公休</span>:cs==='uncertain'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F0EBE4",color:"#9C8878"}}>? 不確定</span>:lbl?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#EDE8E2",color:"#8E8E93"}}>{lbl}</span>:null;})()}
                 </div>
               </button>
             ))}
@@ -1412,7 +1457,7 @@ function CountryPage({ country, places, onBack, onSelect }) {
                         <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
                         <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
                         {p.note && <div style={{ fontSize:10, color:"#636366", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
-                        {(()=>{const cs=checkTodayClosed(p.opening_hours);return cs==='closed'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F5E6E4",color:"#A85550"}}>● 今日公休</span>:cs==='uncertain'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F0EBE4",color:"#9C8878"}}>? 不確定</span>:null;})()}
+                        {(()=>{const cs=checkTodayClosed(p.opening_hours);const lbl=getClosedDaysLabel(p.opening_hours);return cs==='closed'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F5E6E4",color:"#A85550"}}>● 今日公休</span>:cs==='uncertain'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F0EBE4",color:"#9C8878"}}>? 不確定</span>:lbl?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#EDE8E2",color:"#8E8E93"}}>{lbl}</span>:null;})()}
                       </div>
                     </button>
                   ))}
