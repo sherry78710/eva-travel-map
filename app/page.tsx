@@ -1213,8 +1213,9 @@ function CountryPage({ country, places, onBack, onSelect }) {
   const [filterCity, setFilterCity] = useState("");
   const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
 
-  const cities = ["全部", ...Array.from(new Set(places.filter((p:any)=>p.country===country).map((p:any)=>p.city).filter(Boolean)))];
+  const cities = ["全部", ...Array.from(new Set((places||[]).filter((p:any)=>p.country===country).map((p:any)=>p.city).filter(Boolean)))];
 
+  const list = (places||[]).filter((p:any) => p.country === country);
 
   const filtered = list.filter((p:any) => {
     const lq = q.toLowerCase();
