@@ -948,6 +948,13 @@ function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCou
     setExpandedCity(null);
   }
 
+  function deleteDist(country:string, city:string, dist:string) {
+    const cityData = { ...(geoData[country]?.[city] || {}) };
+    delete cityData[dist];
+    const updated = { ...geoData, [country]: { ...(geoData[country]||{}), [city]: cityData } };
+    onUpdateGeo(updated);
+  }
+
   function addNb(country:string, city:string) {
     const nb = newNb.trim();
     const dist = newDist.trim() || "其他";
@@ -1035,9 +1042,12 @@ function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCou
                               </div>
                               {isCityExpanded && (
                                 <div style={{ borderTop:"1px solid #EDE8E2", padding:"10px 12px" }}>
-                                  {Object.entries(districts).map(([dist, nbs]:any)=>(
+                                  {Object.entries(districts).sort(([a],[b])=>a.localeCompare(b,'zh-TW')).map(([dist, nbs]:any)=>(
                                     <div key={dist} style={{ marginBottom:8 }}>
-                                      <div style={{ fontSize:11, color:"#8E8E93", marginBottom:4 }}>{dist}</div>
+                                      <div style={{ fontSize:11, color:"#8E8E93", marginBottom:4, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                                        <span>{dist}</span>
+                                        <button onClick={()=>deleteDist(c,city,dist)} style={{ background:"none", border:"none", color:"#FF3B30", fontSize:11, cursor:"pointer", padding:0 }}>刪除</button>
+                                      </div>
                                       <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
                                         {nbs.map((nb:string)=>(
                                           <div key={nb} style={{ display:"flex", alignItems:"center", gap:3, background:"#F5F0EB", borderRadius:8, padding:"3px 8px" }}>
