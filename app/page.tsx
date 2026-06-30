@@ -2581,7 +2581,7 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
               )}
               {/* 韓國加 Naver Maps */}
               {place.country==="韓國" && (
-                <a href={`https://map.naver.com/v5/search/${q}`} target="_blank" rel="noreferrer"
+                <a href={`https://map.naver.com/v5/search/${encodeURIComponent(naverQuery(searchName, place.address))}`} target="_blank" rel="noreferrer"
                   style={{ width:36, height:36, borderRadius:10, background:"#03C75A", display:"flex", alignItems:"center", justifyContent:"center", textDecoration:"none" }} title="Naver Maps">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
                     <path d="M13.4 12.2L10.4 7H7v10h3.6v-5.2l3.1 5.2H17V7h-3.6v5.2z" fill="white"/>
@@ -3019,11 +3019,24 @@ function tripEnumerate(start:string,end:string){ const res:string[]=[]; if(!star
 function tripRebuildDays(start:string,end:string,existing:any[]){ const dates=tripEnumerate(start,end); const map:any={}; (existing||[]).forEach((dy:any)=>{ map[dy.date]=dy.items||[]; }); return dates.map((dt:string)=>({date:dt, items:map[dt]||[]})); }
 function tripUid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function tripPlaceQuery(p:any){ if(p && p._custom) return (p.address||'').trim(); const nm=(p && p.map_query && p.map_query.trim())?p.map_query.trim():((p&&p.name)||''); return [nm, p&&p.address].map((s:string)=>(s||'').trim()).filter(Boolean).join(' '); }
+// 韓國 Naver 搜尋字串：店名 + 區(구) + 洞(동)，丟掉門牌號、路名、樓層；沒店名就用地址（去樓層）
+function naverQuery(name:string, address:string){
+  const addr=(address||'').trim();
+  const gu=(addr.match(/([가-힣]+구)(?:\s|$)/)||[])[1]||'';
+  const dong=(addr.match(/([가-힣]+동\d*가?)(?:\s|$)/)||[])[1]||'';
+  const hint=[gu,dong].filter(Boolean).join(' ');
+  const nm=(name||'').trim();
+  if(nm) return [nm,hint].filter(Boolean).join(' ').trim();
+  return addr.replace(/\s*(지하)?\s*\d+\s*층/g,'').replace(/\s+/g,' ').trim() || addr;
+}
 function tripNavApp(country:string){ if(country==='中國') return {name:'高德', bg:'#E9F0FB', color:'#185FA5'}; if(country==='韓國') return {name:'Naver', bg:'#DFF3E8', color:'#0F6E56'}; return {name:'Google', bg:'#E9F0FB', color:'#185FA5'}; }
 function tripNavUrl(fromP:any, toP:any, country:string){
   const toQ=encodeURIComponent(tripPlaceQuery(toP));
   if(country==='中國') return `https://uri.amap.com/search?keyword=${toQ}`;
-  if(country==='韓國') return `https://map.naver.com/v5/search/${toQ}`;
+  if(country==='韓國'){
+    const nm = toP._custom ? '' : ((toP.map_query&&toP.map_query.trim())?toP.map_query.trim():(toP.name||''));
+    return `https://map.naver.com/v5/search/${encodeURIComponent(naverQuery(nm, toP.address||''))}`;
+  }
   if(fromP && tripPlaceQuery(fromP)){ const fromQ=encodeURIComponent(tripPlaceQuery(fromP)); return `https://www.google.com/maps/dir/?api=1&origin=${fromQ}&destination=${toQ}`; }
   return `https://maps.google.com/?q=${toQ}`;
 }
