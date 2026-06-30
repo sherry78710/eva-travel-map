@@ -2047,8 +2047,27 @@ const ADDRESS_MAP: Array<{key:string, country:string, city:string, district:stri
   {key:"新加坡",    country:"新加坡", city:"新加坡", district:"", neighborhood:""},
 ];
 
-function parseAddressMultiCountry(addr: string): { country?:string; city?: string; district?: string; neighborhood?: string } | null {
-  const lower = addr.toLowerCase();
+// 韓國「구（區）」→ 中文行政區（도로명沒有洞時的後援；依城市區分）
+const KR_GU_SEOUL:any = {
+  "종로구":"鐘路區","중구":"中區","용산구":"龍山區","성동구":"城東區","광진구":"廣津區",
+  "동대문구":"東大門區","중랑구":"中浪區","성북구":"城北區","강북구":"江北區","도봉구":"道峰區",
+  "노원구":"蘆原區","은평구":"恩平區","서대문구":"西大門區","마포구":"麻浦區","양천구":"陽川區",
+  "강서구":"江西區","구로구":"九老區","금천구":"衿川區","영등포구":"永登浦區","동작구":"銅雀區",
+  "관악구":"冠岳區","서초구":"瑞草區","강남구":"江南區","송파구":"松坡區","강동구":"江東區"
+};
+const KR_GU_BUSAN:any = {
+  "중구":"中區","서구":"西區","동구":"東區","영도구":"影島區","부산진구":"釜山鎮區","동래구":"東萊區",
+  "남구":"南區","북구":"北區","해운대구":"海雲台區","사하구":"沙下區","금정구":"金井區","강서구":"江西區",
+  "연제구":"蓮堤區","수영구":"水營區","사상구":"沙上區","기장군":"機張郡"
+};
+const KR_CITY_KW:any = [
+  {re:/서울/, city:"首爾", map:KR_GU_SEOUL},
+  {re:/부산/, city:"釜山", map:KR_GU_BUSAN},
+  {re:/제주/, city:"濟州", map:{}},
+  {re:/인천/, city:"仁川", map:{}},
+];
+
+function parseAddressMultiCountry(addr: string): { country?:string; city?: string; district?: string; neighborhood?: string } | null {  const lower = addr.toLowerCase();
   const sorted = [...ADDRESS_MAP].sort((a,b)=>b.key.length-a.key.length);
 
   let base: { country?:string; city?: string; district?: string; neighborhood?: string } | null = null;
@@ -2085,10 +2104,23 @@ function parseAddressMultiCountry(addr: string): { country?:string; city?: strin
     if(m && m[1]) base.district = m[1].replace(/区/g, '區');
   }
 
+  // 韓國：도로명/지번 沒抓到行政區時，從「○○구」直接對應（依城市區分釜山/首爾）
+  if ((!base || (base.country==="韓國" && !base.district)) && /[가-힣]/.test(addr)) {
+    let cityInfo:any = null;
+    for(const c of KR_CITY_KW){ if(c.re.test(addr)){ cityInfo=c; break; } }
+    const guM = addr.match(/([가-힣]+구)(?:\s|$)/);
+    if(guM){
+      const gu = guM[1];
+      const map = cityInfo ? cityInfo.map : KR_GU_SEOUL;
+      const district = map[gu] || (cityInfo===null ? KR_GU_SEOUL[gu] : "");
+      if(district){
+        base = { country:"韓國", city: (base?.city)||(cityInfo?cityInfo.city:"首爾"), district, neighborhood: base?.neighborhood||"" };
+      }
+    }
+  }
+
   return base;
 }
-
-const KR_KEYWORD_MAP = ADDRESS_MAP.filter(x=>x.country==="韓國");
 
 function parseKoreanAddress(addr: string): { city?: string; district?: string; neighborhood?: string } | null {
   const result = parseAddressMultiCountry(addr);
