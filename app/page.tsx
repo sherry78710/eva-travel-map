@@ -711,6 +711,20 @@ function BranchesEditor({ branches, country, countries, geoData, onChange }) {
   function add() {
     onChange([...list, { name:"", city:"", district:"", neighborhood:"", address:"", map_query:"" }]);
   }
+  function handleAddressChange(i:number, addr:string) {
+    update(i, { address: addr });
+    if (addr.length > 3) {
+      const parsed = parseAddressMultiCountry(addr);
+      if (parsed && (parsed.city||parsed.district||parsed.neighborhood)) {
+        update(i, {
+          address: addr,
+          ...(parsed.city && { city: parsed.city }),
+          ...(parsed.district && { district: parsed.district }),
+          ...(parsed.neighborhood && { neighborhood: parsed.neighborhood }),
+        });
+      }
+    }
+  }
   return (
     <div style={{ marginBottom:12 }}>
       <div style={{ fontSize:11, color:"#8E8E93", marginBottom:8, textTransform:"uppercase", letterSpacing:0.5, paddingLeft:2 }}>其他分店 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 選填</span></div>
@@ -727,8 +741,8 @@ function BranchesEditor({ branches, country, countries, geoData, onChange }) {
               onChange={({city,district,neighborhood})=>update(i,{city,district,neighborhood})} />
           </div>
           <div style={{ padding:"14px 16px", borderTop:"1px solid #EDE8E2" }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地址</div>
-            <input value={b.address||""} onChange={e=>update(i,{address:e.target.value})}
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地址 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 貼上自動帶入位置</span></div>
+            <input value={b.address||""} onChange={e=>handleAddressChange(i, e.target.value)}
               style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
         </div>
@@ -740,6 +754,7 @@ function BranchesEditor({ branches, country, countries, geoData, onChange }) {
 
 // ── Location Selector ─────────────────────────────────────────────────────────
 function LocationSelector({ country, city, district, neighborhood, countries, geoData, onChange }) {
+  const [customNb, setCustomNb] = useState(false);
   const g = geoData || GEO;
   let cities = Object.keys((g && g[country]) || {});
   let districts = Object.keys((g && g[country] && g[country][city]) || {});
@@ -790,19 +805,26 @@ function LocationSelector({ country, city, district, neighborhood, countries, ge
             style={{ ...sel, border:"none", outline:"none" }} />
         )}
       </Row>
-      {/* 商圈 — 可選可清空 */}
+      {/* 商圈 — 可選可清空，也可以自行輸入 */}
       <Row label="商圈" last>
-        {neighborhoods.length > 0 ? (
+        {(!customNb && neighborhoods.length > 0) ? (
           <select value={neighborhood} onChange={e => {
+            if (e.target.value === "__custom__") { setCustomNb(true); onChange({ country, city, district, neighborhood:"" }); return; }
             onChange({ country, city, district, neighborhood:e.target.value });
           }} style={sel}>
             <option value="">不填</option>
             {neighborhoods.map(n => <option key={n} value={n}>{n}</option>)}
+            <option value="__custom__">✏️ 自行輸入</option>
           </select>
         ) : (
-          <input value={neighborhood} onChange={e =>
-            onChange({ country, city, district, neighborhood:e.target.value })
-          } placeholder="選填" style={{ ...sel, border:"none", outline:"none" }} />
+          <div style={{ display:"flex", alignItems:"center", gap:6, flex:1, justifyContent:"flex-end" }}>
+            <input value={neighborhood} onChange={e =>
+              onChange({ country, city, district, neighborhood:e.target.value })
+            } placeholder="選填" style={{ ...sel, flex:"none", width:"auto", minWidth:60, textAlign:"right" }} />
+            {neighborhoods.length > 0 && (
+              <button onClick={()=>setCustomNb(false)} style={{ background:"none", border:"none", color:"#8E8E93", fontSize:12, cursor:"pointer", padding:0, flexShrink:0 }}>清單</button>
+            )}
+          </div>
         )}
       </Row>
     </div>
@@ -3363,10 +3385,10 @@ function TripItemEditor({ item, kind, days, currentDate, onClose, onSave, onDele
             </div>
           )}
           <div style={{ background:'#FDF8F3', borderRadius:14, overflow:'hidden', marginBottom:12 }}>
-            <div style={{ padding:'13px 15px', borderBottom:'1px solid #EDE8E2', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <label htmlFor="tripItemTimeInput" style={{ padding:'13px 15px', borderBottom:'1px solid #EDE8E2', display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer' }}>
               <div style={labelCss}>時間 <span style={{ color:'#C7C7CC', fontWeight:400 }}>· 選填</span></div>
-              <input type="time" value={f.time} onChange={e=>setF((x:any)=>({...x,time:e.target.value}))} style={{ border:'none', outline:'none', fontSize:15, background:'none', fontFamily:'inherit', color:'#000' }} />
-            </div>
+              <input id="tripItemTimeInput" type="time" value={f.time} onChange={e=>setF((x:any)=>({...x,time:e.target.value}))} style={{ border:'none', outline:'none', fontSize:15, background:'none', fontFamily:'inherit', color:'#000' }} />
+            </label>
             <div style={{ padding:'13px 15px' }}>
               <div style={labelCss}>這趟的備註</div>
               <textarea value={f.note} onChange={e=>setF((x:any)=>({...x,note:e.target.value}))} rows={2} placeholder="例：記得先訂位、想點季節限定" style={{ width:'100%', border:'none', outline:'none', fontSize:15, background:'none', fontFamily:'inherit', color:'#000', resize:'none', lineHeight:1.6 }} />
