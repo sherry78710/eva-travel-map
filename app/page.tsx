@@ -677,7 +677,7 @@ function PlaceRow({ place, onClick }) {
         <PlaceIcon status={place.status} />
       )}
       <div style={{ flex:1 }}>
-        <div style={{ fontSize:15, fontWeight:600, color:"#000", marginBottom:2 }}>{place.name}</div>
+        <div style={{ fontSize:15, fontWeight:600, color:"#000", marginBottom:2 }}>{place.name}{place._branchName ? ` · ${place._branchName}` : ""}</div>
         <div style={{ fontSize:12, color:"#8E8E93" }}>{[place.district, place.neighborhood].filter(Boolean).join(" ")}{place.types?.[0] ? ` · ${place.types[0]}` : ""}</div>
         {place.note && <div style={{ fontSize:11, color:"#636366", marginTop:2, fontStyle:"italic" }}>{place.note}</div>}
         {closedStatus==='closed' && <span style={{ display:"inline-block", marginTop:4, padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:500, background:"#F5E6E4", color:"#A85550" }}>● 今日公休</span>}
@@ -689,6 +689,52 @@ function PlaceRow({ place, onClick }) {
       </div>
       <div style={{ fontSize:18, color:"#C7C7CC" }}>›</div>
     </button>
+  );
+}
+
+// ── 分店：把「主要地點」+「額外分店」攤平成一個陣列 ─────────────────────────────
+function branchLocations(p:any) {
+  const primary = { name:"", city:p.city||"", district:p.district||"", neighborhood:p.neighborhood||"", address:p.address||"", map_query:p.map_query||"" };
+  const extra = (p.branches||[]);
+  return [primary, ...extra];
+}
+
+// ── 分店編輯器（新增/編輯共用）───────────────────────────────────────────────
+function BranchesEditor({ branches, country, countries, geoData, onChange }) {
+  const list = branches || [];
+  function update(i:number, patch:any) {
+    onChange(list.map((b:any,idx:number)=> idx===i ? {...b, ...patch} : b));
+  }
+  function remove(i:number) {
+    onChange(list.filter((_:any,idx:number)=>idx!==i));
+  }
+  function add() {
+    onChange([...list, { name:"", city:"", district:"", neighborhood:"", address:"", map_query:"" }]);
+  }
+  return (
+    <div style={{ marginBottom:12 }}>
+      <div style={{ fontSize:11, color:"#8E8E93", marginBottom:8, textTransform:"uppercase", letterSpacing:0.5, paddingLeft:2 }}>其他分店 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 選填</span></div>
+      {list.map((b:any,i:number)=>(
+        <div key={i} style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:10 }}>
+          <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2", display:"flex", alignItems:"center", gap:8 }}>
+            <input value={b.name||""} onChange={e=>update(i,{name:e.target.value})} placeholder="分店名稱（例如：信義店）"
+              style={{ flex:1, border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
+            <button onClick={()=>remove(i)} style={{ background:"none", border:"none", color:"#FF3B30", fontSize:13, cursor:"pointer", padding:0 }}>刪除</button>
+          </div>
+          <div style={{ padding:12 }}>
+            <LocationSelector country={country} city={b.city} district={b.district} neighborhood={b.neighborhood}
+              countries={countries} geoData={geoData||GEO}
+              onChange={({city,district,neighborhood})=>update(i,{city,district,neighborhood})} />
+          </div>
+          <div style={{ padding:"14px 16px", borderTop:"1px solid #EDE8E2" }}>
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地址</div>
+            <input value={b.address||""} onChange={e=>update(i,{address:e.target.value})}
+              style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
+          </div>
+        </div>
+      ))}
+      <button onClick={add} style={{ width:"100%", padding:"12px 0", borderRadius:14, border:"1.5px dashed #C9C4BE", background:"none", color:"#8E8E93", fontSize:14, fontWeight:600, cursor:"pointer" }}>＋ 新增分店</button>
+    </div>
   );
 }
 
@@ -1296,11 +1342,17 @@ function CountryPage({ country, places, onBack, onSelect }) {
   const [filterCity, setFilterCity] = useState("");
   const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
 
-  const cities = ["全部", ...Array.from(new Set((places||[]).filter((p:any)=>p.country===country).map((p:any)=>p.city).filter(Boolean)))];
-
   const list = (places||[]).filter((p:any) => p.country === country);
 
-  const filtered = list.filter((p:any) => {
+  // 把每間店攤平成「主要地點 + 分店」，多分店的店會在每個有分店的城市/區域都出現一次
+  const rows = list.flatMap((p:any) => branchLocations(p).map((loc:any) => ({
+    ...p, city:loc.city, district:loc.district, neighborhood:loc.neighborhood, address:loc.address, map_query:loc.map_query,
+    _branchName: loc.name || "", _origPlace: p,
+  })));
+
+  const cities = ["全部", ...Array.from(new Set(rows.map((r:any)=>r.city).filter(Boolean)))];
+
+  const filtered = rows.filter((p:any) => {
     const lq = q.toLowerCase();
     const mQ = !q.trim() || [p.name, p.neighborhood, p.note||"", p.review||"", ...(p.recommendations||[]), ...(p.types||[])].some((s:string) => s.toLowerCase().includes(lq));
     const mS = !filterStatus || p.status === filterStatus;
@@ -1397,8 +1449,8 @@ function CountryPage({ country, places, onBack, onSelect }) {
               {!isCollapsed && viewMode==='list' && (
                 <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden" }}>
                   {nbPlaces.map((p:any,i:number)=>(
-                    <div key={p.id} style={{ borderBottom:i<nbPlaces.length-1?"1px solid #EDE8E2":"none" }}>
-                      <PlaceRow place={p} onClick={()=>onSelect(p)} />
+                    <div key={p.id+'_'+i} style={{ borderBottom:i<nbPlaces.length-1?"1px solid #EDE8E2":"none" }}>
+                      <PlaceRow place={p} onClick={()=>onSelect(p._origPlace||p)} />
                     </div>
                   ))}
                 </div>
@@ -1406,8 +1458,8 @@ function CountryPage({ country, places, onBack, onSelect }) {
 
               {!isCollapsed && viewMode==='grid' && (
                 <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                  {nbPlaces.map((p:any)=>(
-                    <button key={p.id} onClick={()=>onSelect(p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left" }}>
+                  {nbPlaces.map((p:any,gi:number)=>(
+                    <button key={p.id+'_'+gi} onClick={()=>onSelect(p._origPlace||p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left" }}>
                       <div style={{ height:110, background:"#EDE8E2", position:"relative", overflow:"hidden" }}>
                         {p.photos?.[0]
                           ? <img src={p.photos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
@@ -1415,7 +1467,7 @@ function CountryPage({ country, places, onBack, onSelect }) {
                         }
                       </div>
                       <div style={{ padding:"8px 10px 10px" }}>
-                        <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
+                        <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}{p._branchName ? ` · ${p._branchName}` : ""}</div>
                         <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
                         {p.note && <div style={{ fontSize:10, color:"#636366", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
                         {(()=>{const cs=checkTodayClosed(p.opening_hours);const lbl=getClosedDaysLabel(p.opening_hours);return cs==='closed'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F5E6E4",color:"#A85550"}}>● 今日公休</span>:cs==='uncertain'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F0EBE4",color:"#9C8878"}}>? 不確定</span>:lbl?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#EDE8E2",color:"#8E8E93"}}>{lbl}</span>:null;})()}
@@ -2227,7 +2279,7 @@ function parseAddress(addr, geoData) {
 }
 
 function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb }) {
-  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[] });
+  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[],branches:[] });
   const [saving,setSaving] = useState(false);
   const photoInputRef = useRef(null);
   const set=(k:string,v:any)=>setF((x:any)=>({...x,[k]:v}));
@@ -2315,6 +2367,9 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
               style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
         </div>
+
+        <BranchesEditor branches={f.branches} country={f.country} countries={countries} geoData={geoDataProp||GEO}
+          onChange={(branches:any)=>set("branches",branches)} />
 
         <div style={{ background:"#FDF8F3", borderRadius:16, padding:16, marginBottom:12 }}>
           <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>類型</div>
@@ -2425,6 +2480,9 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
               </div>
             ))}
           </div>
+
+          <BranchesEditor branches={f.branches} country={f.country} countries={countries} geoData={geoData||GEO}
+            onChange={(branches:any)=>setF((x:any)=>({...x,branches}))} />
 
           <RatingRow rating={f.rating||0} review={f.review||""} onChange={({rating,review})=>setF(x=>({...x,rating,review}))} />
 
@@ -2587,42 +2645,52 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
           </div>
         )}
 
-        <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px" }}>
-            <div>
-              <div style={{ fontSize:11, color:"#8E8E93", marginBottom:3, textTransform:"uppercase", letterSpacing:0.5 }}>地址</div>
-              <div style={{ fontSize:14, color:"#000" }}>{place.address || "未填寫"}</div>
+        {branchLocations(place).map((loc:any, i:number) => {
+          const locSearchName = (loc.map_query && loc.map_query.trim()) ? loc.map_query.trim() : ((place.map_query && place.map_query.trim()) ? place.map_query.trim() : (place.name||""));
+          const locQ = encodeURIComponent([locSearchName, loc.address].map((s:string)=>(s||"").trim()).filter(Boolean).join(" "));
+          const hasMultiple = branchLocations(place).length > 1;
+          return (
+            <div key={i} style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px" }}>
+                <div>
+                  <div style={{ fontSize:11, color:"#8E8E93", marginBottom:3, textTransform:"uppercase", letterSpacing:0.5 }}>
+                    {hasMultiple ? (loc.name || (i===0 ? "總店 / 地址" : `分店 ${i+1}`)) : "地址"}
+                  </div>
+                  {hasMultiple && <div style={{ fontSize:12, color:"#8E8E93", marginBottom:2 }}>{[loc.city, loc.district, loc.neighborhood].filter(Boolean).join(" · ")}</div>}
+                  <div style={{ fontSize:14, color:"#000" }}>{loc.address || "未填寫"}</div>
+                </div>
+                <div style={{ display:"flex", gap:8 }}>
+                  {/* 中國用高德，其他用 Google Maps */}
+                  {place.country==="中國" ? (
+                    <a href={`https://uri.amap.com/search?keyword=${locQ}`} target="_blank" rel="noreferrer"
+                      style={{ width:36, height:36, borderRadius:10, background:"#1677FF", display:"flex", alignItems:"center", justifyContent:"center", textDecoration:"none" }} title="高德地圖">
+                      <span style={{ color:"white", fontSize:13, fontWeight:700 }}>高德</span>
+                    </a>
+                  ) : (
+                    <a href={`https://maps.google.com/?q=${locQ}`} target="_blank" rel="noreferrer"
+                      style={{ width:36, height:36, borderRadius:10, background:"#fff", display:"flex", alignItems:"center", justifyContent:"center", textDecoration:"none", boxShadow:"0 1px 4px rgba(0,0,0,0.12)" }} title="Google Maps">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#EA4335"/>
+                        <path d="M12 2C8.13 2 5 5.13 5 9c0 1.93.78 3.68 2.04 4.96L12 2z" fill="#FBBC04"/>
+                        <path d="M12 2l4.96 11.96C18.22 12.68 19 10.93 19 9c0-3.87-3.13-7-7-7z" fill="#4285F4"/>
+                        <circle cx="12" cy="9" r="2.5" fill="white"/>
+                      </svg>
+                    </a>
+                  )}
+                  {/* 韓國加 Naver Maps */}
+                  {place.country==="韓國" && (
+                    <a href={`https://map.naver.com/v5/search/${encodeURIComponent(naverQuery(locSearchName, loc.address))}`} target="_blank" rel="noreferrer"
+                      style={{ width:36, height:36, borderRadius:10, background:"#03C75A", display:"flex", alignItems:"center", justifyContent:"center", textDecoration:"none" }} title="Naver Maps">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        <path d="M13.4 12.2L10.4 7H7v10h3.6v-5.2l3.1 5.2H17V7h-3.6v5.2z" fill="white"/>
+                      </svg>
+                    </a>
+                  )}
+                </div>
+              </div>
             </div>
-            <div style={{ display:"flex", gap:8 }}>
-              {/* 中國用高德，其他用 Google Maps */}
-              {place.country==="中國" ? (
-                <a href={`https://uri.amap.com/search?keyword=${q}`} target="_blank" rel="noreferrer"
-                  style={{ width:36, height:36, borderRadius:10, background:"#1677FF", display:"flex", alignItems:"center", justifyContent:"center", textDecoration:"none" }} title="高德地圖">
-                  <span style={{ color:"white", fontSize:13, fontWeight:700 }}>高德</span>
-                </a>
-              ) : (
-                <a href={`https://maps.google.com/?q=${q}`} target="_blank" rel="noreferrer"
-                  style={{ width:36, height:36, borderRadius:10, background:"#fff", display:"flex", alignItems:"center", justifyContent:"center", textDecoration:"none", boxShadow:"0 1px 4px rgba(0,0,0,0.12)" }} title="Google Maps">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#EA4335"/>
-                    <path d="M12 2C8.13 2 5 5.13 5 9c0 1.93.78 3.68 2.04 4.96L12 2z" fill="#FBBC04"/>
-                    <path d="M12 2l4.96 11.96C18.22 12.68 19 10.93 19 9c0-3.87-3.13-7-7-7z" fill="#4285F4"/>
-                    <circle cx="12" cy="9" r="2.5" fill="white"/>
-                  </svg>
-                </a>
-              )}
-              {/* 韓國加 Naver Maps */}
-              {place.country==="韓國" && (
-                <a href={`https://map.naver.com/v5/search/${encodeURIComponent(naverQuery(searchName, place.address))}`} target="_blank" rel="noreferrer"
-                  style={{ width:36, height:36, borderRadius:10, background:"#03C75A", display:"flex", alignItems:"center", justifyContent:"center", textDecoration:"none" }} title="Naver Maps">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                    <path d="M13.4 12.2L10.4 7H7v10h3.6v-5.2l3.1 5.2H17V7h-3.6v5.2z" fill="white"/>
-                  </svg>
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
+          );
+        })}
       </div>
       {addTripOpen && (
         <AddToTripSheet trips={trips} place={place}
@@ -3646,7 +3714,7 @@ export default function App() {
       sb.from('user_settings').select('*').eq('id','default').single(),
       sb.from('trips').select('*').order('start_date',{ascending:true}),
     ]).then(([placesRes, settingsRes, tripsRes])=>{
-      if(placesRes.data) setPlaces(placesRes.data.map((p:any)=>({...p, map_query: p.summary||''})));
+      if(placesRes.data) setPlaces(placesRes.data.map((p:any)=>({...p, map_query: p.summary||'', branches: p.branches||[]})));
       if(tripsRes && tripsRes.data) setTrips(tripsRes.data);
       if(settingsRes.data){
         const s = settingsRes.data;
@@ -3778,9 +3846,10 @@ export default function App() {
       recommendations: (typeof p.recommendations === 'string' ? p.recommendations.split('\n') : (p.recommendations||[])).map((s:string)=>s.trim()).filter(Boolean),
       source_url:p.source_url||'',
       rating:0, review:'', summary:p.map_query||'', tags:[], photos:p.photos||[],
+      branches:p.branches||[],
     };
     const {data,error}=await sb.from('places').insert([payload]).select().single();
-    if(!error&&data) setPlaces(ps=>[{...data, map_query:data.summary||''},...ps]);
+    if(!error&&data) setPlaces(ps=>[{...data, map_query:data.summary||'', branches:data.branches||[]},...ps]);
     else { console.error('handleAdd error:', error); alert('新增失敗：' + (error?.message || JSON.stringify(error))); }
   }
 
@@ -3800,6 +3869,7 @@ export default function App() {
       recommendations: (typeof u.recommendations === 'string' ? u.recommendations.split('\n') : (u.recommendations||[])).map((s:string)=>s.trim()).filter(Boolean), source_url:u.source_url||'',
       rating:u.rating||0, review:u.review||'', photos:u.photos||[],
       status:u.status, summary:u.map_query||'', tags:u.tags||[],
+      branches:u.branches||[],
     }).eq('id',u.id);
     if(!error){ setPlaces(ps=>ps.map(p=>p.id===u.id?u:p)); setSelected(u); }
     else { console.error('handleEdit error:', error); alert('儲存失敗：' + (error?.message || JSON.stringify(error))); }
