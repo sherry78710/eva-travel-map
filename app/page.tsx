@@ -1406,7 +1406,12 @@ function CountryPage({ country, places, onBack, onSelect }) {
           </div>
         </div>
         {/* 狀態篩選 */}
-        <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+        <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+          <button onClick={()=>setFilterStatus("")}
+            style={{ flex:1, background:!filterStatus?"#3C3C3C":"#F5F0EB", borderRadius:12, padding:"10px 0", textAlign:"center", border:"none", cursor:"pointer" }}>
+            <div style={{ fontSize:20, fontWeight:700, color:!filterStatus?"white":"#000", lineHeight:1 }}>{list.length}</div>
+            <div style={{ fontSize:10, color:!filterStatus?"rgba(255,255,255,0.7)":"#8E8E93", marginTop:3 }}>全部</div>
+          </button>
           {Object.entries(STATUS_CFG).map(([k,s])=>{
             const count = list.filter((p:any)=>p.status===k).length;
             const active = filterStatus === k;
