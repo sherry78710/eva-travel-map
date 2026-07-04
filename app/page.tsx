@@ -2668,7 +2668,8 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
         )}
 
         {branchLocations(place).map((loc:any, i:number) => {
-          const locSearchName = (loc.map_query && loc.map_query.trim()) ? loc.map_query.trim() : ((place.map_query && place.map_query.trim()) ? place.map_query.trim() : (place.name||""));
+          const baseName = (place.map_query && place.map_query.trim()) ? place.map_query.trim() : (place.name||"");
+          const locSearchName = [baseName, (loc.name||"").trim()].filter(Boolean).join(" ").trim();
           const locQ = encodeURIComponent([locSearchName, loc.address].map((s:string)=>(s||"").trim()).filter(Boolean).join(" "));
           const hasMultiple = branchLocations(place).length > 1;
           return (
