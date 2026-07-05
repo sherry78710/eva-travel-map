@@ -1357,12 +1357,13 @@ function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onT
 }
 
 // ── Country ───────────────────────────────────────────────────────────────────
-function CountryPage({ country, places, onBack, onSelect }) {
+function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCityOrder }) {
   const [q, setQ] = useState("");
   const [collapsed, setCollapsed] = useState<any>({});
   const [filterStatus, setFilterStatus] = useState("");
   const [filterCity, setFilterCity] = useState("");
   const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
+  const [showCityOrder, setShowCityOrder] = useState(false);
 
   const list = (places||[]).filter((p:any) => p.country === country);
 
@@ -1372,7 +1373,13 @@ function CountryPage({ country, places, onBack, onSelect }) {
     _branchName: loc.name || "", _origPlace: p,
   })));
 
-  const cities = ["全部", ...Array.from(new Set(rows.map((r:any)=>r.city).filter(Boolean)))];
+  let baseCities = Array.from(new Set(rows.map((r:any)=>r.city).filter(Boolean)));
+  if (cityOrder && cityOrder.length) {
+    const known = cityOrder.filter((c:string) => baseCities.includes(c));
+    const extra = baseCities.filter((c:string) => !cityOrder.includes(c));
+    baseCities = [...known, ...extra];
+  }
+  const cities = ["全部", ...baseCities];
 
   const filtered = rows.filter((p:any) => {
     const lq = q.toLowerCase();
@@ -1388,6 +1395,7 @@ function CountryPage({ country, places, onBack, onSelect }) {
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(p);
   });
+  const groupedEntries = Object.entries(grouped).sort(([a],[b]) => (a as string).localeCompare(b as string, 'zh-TW'));
 
   function toggleCollapse(nb:string) {
     setCollapsed((c:any) => ({ ...c, [nb]: !c[nb] }));
@@ -1431,7 +1439,7 @@ function CountryPage({ country, places, onBack, onSelect }) {
             style={{ flex:1, border:"none", outline:"none", fontSize:15, background:"none", color:"#000", fontFamily:"inherit" }} />
           {(q||filterStatus) && <button onClick={()=>{setQ("");setFilterStatus("");}} style={{ background:"none", border:"none", color:"#8E8E93", fontSize:16, cursor:"pointer", padding:0 }}>✕</button>}
         </div>
-        {/* 城市篩選膠囊 + 切換按鈕 同一排 */}
+        {/* 城市篩選膠囊 + 排序按鈕 + 切換按鈕 同一排 */}
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <div style={{ flex:1, overflowX:"auto", display:"flex", gap:6, scrollbarWidth:"none", WebkitOverflowScrolling:"touch" }}>
             {cities.map(c => {
@@ -1445,6 +1453,9 @@ function CountryPage({ country, places, onBack, onSelect }) {
             })}
           </div>
           <div style={{ display:"flex", gap:4, flexShrink:0 }}>
+            {baseCities.length > 1 && (
+              <button onClick={()=>setShowCityOrder(true)} style={{ width:28, height:28, borderRadius:8, background:"#EDE8E2", border:"none", cursor:"pointer", fontSize:14, color:"#8E8E93", display:"flex", alignItems:"center", justifyContent:"center" }}>⇅</button>
+            )}
             <button onClick={()=>setViewMode('list')} style={{ background:viewMode==='list'?"#3C3C3C":"none", border:"none", borderRadius:6, padding:"4px 7px", cursor:"pointer", display:"flex", alignItems:"center", gap:1.5, flexDirection:"column" }}>
               {[0,1,2].map(i=><div key={i} style={{ width:12, height:2, background:viewMode==='list'?"white":"#8E8E93", borderRadius:1 }} />)}
             </button>
@@ -1455,13 +1466,20 @@ function CountryPage({ country, places, onBack, onSelect }) {
         </div>
       </div>
 
+      {showCityOrder && (
+        <CityOrderManager country={country} cities={baseCities}
+          counts={Object.fromEntries(baseCities.map((c:string)=>[c, rows.filter((r:any)=>r.city===c).length]))}
+          onClose={()=>setShowCityOrder(false)}
+          onChange={(list:string[])=>onUpdateCityOrder(country, list)} />
+      )}
+
       {/* 滾動區域 */}
       <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"12px 20px 40px" }}>
         {filtered.length === 0 && (
           <div style={{ textAlign:"center", padding:"60px 0", color:"#8E8E93", fontSize:15 }}>{q||filterStatus ? "沒有符合的地點" : "還沒有收藏"}</div>
         )}
 
-        {Object.entries(grouped).map(([nb, nbPlaces]:any) => {
+        {groupedEntries.map(([nb, nbPlaces]:any) => {
           const isCollapsed = collapsed[nb];
           return (
             <div key={nb} style={{ marginBottom:16 }}>
@@ -3131,6 +3149,50 @@ function CatManager({ country, cats, grouped, onClose, onChange }:any){
   );
 }
 
+function CityOrderManager({ country, cities, counts, onClose, onChange }:any){
+  const [list,setList]=useState<string[]>(cities);
+  const [dragIdx,setDragIdx]=useState<number|null>(null);
+  const [overIdx,setOverIdx]=useState<number|null>(null);
+  const [dragY,setDragY]=useState(0);
+  const startY=useRef(0);
+  const ITEM_H=52;
+  function commit(next:string[]){ setList(next); onChange(next); }
+  function dStart(e:any,i:number){ e.preventDefault(); startY.current=e.touches[0].clientY; setDragIdx(i); setOverIdx(i); setDragY(0); }
+  function dMove(e:any){ if(dragIdx===null) return; e.preventDefault(); const dy=e.touches[0].clientY-startY.current; setDragY(dy); setOverIdx(Math.max(0,Math.min(list.length-1,dragIdx+Math.round(dy/ITEM_H)))); }
+  function dEnd(){ if(dragIdx!==null&&overIdx!==null&&dragIdx!==overIdx){ const a=[...list]; const [m]=a.splice(dragIdx,1); a.splice(overIdx,0,m); commit(a); } setDragIdx(null); setOverIdx(null); setDragY(0); }
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",zIndex:150,display:"flex",alignItems:"flex-end"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",background:"#F5F0EB",borderTopLeftRadius:20,borderTopRightRadius:20,maxHeight:"82vh",overflowY:"auto",paddingBottom:"calc(env(safe-area-inset-bottom) + 20px)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 18px 10px"}}>
+          <div style={{width:44}} />
+          <div style={{fontSize:16,fontWeight:600}}>{country} 城市順序</div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:"#007AFF",fontSize:16,fontWeight:600,cursor:"pointer",padding:0}}>完成</button>
+        </div>
+        <div style={{padding:"4px 18px 0"}}>
+          <div style={{fontSize:12,color:"#8E8E93",marginBottom:10}}>按住 ⠿ 拖拉排序，之後新地點都會照這個順序顯示。</div>
+          <div style={{background:"#FDF8F3",borderRadius:14,overflow:"hidden"}}>
+            {list.map((c,i)=>{
+              const isDragging=dragIdx===i;
+              let ty=0;
+              if(dragIdx!==null && !isDragging){
+                if(dragIdx<(overIdx||0) && i>dragIdx && i<=(overIdx||0)) ty=-ITEM_H;
+                else if(dragIdx>(overIdx||0) && i<dragIdx && i>=(overIdx||0)) ty=ITEM_H;
+              }
+              const count=(counts&&counts[c])||0;
+              return (
+                <div key={c} style={{display:"flex",alignItems:"center",padding:"0 14px",height:ITEM_H,borderBottom:i<list.length-1?"1px solid #EDE8E2":"none",background:isDragging?"#F1ECE5":"#FDF8F3",transform:isDragging?`translateY(${dragY}px) scale(1.02)`:`translateY(${ty}px)`,transition:isDragging?"none":"transform 0.2s ease",position:"relative",zIndex:isDragging?10:1}}>
+                  <span style={{flex:1,fontSize:15,color:"#000"}}>{c}<span style={{fontSize:12,color:"#C7C7CC",marginLeft:6}}>{count} 個</span></span>
+                  <span onTouchStart={e=>dStart(e,i)} onTouchMove={dMove} onTouchEnd={dEnd} style={{fontSize:18,color:"#C7C7CC",padding:"0 4px",touchAction:"none",cursor:"grab"}}>⠿</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
 // 行程規劃（Trips）
@@ -3722,6 +3784,7 @@ export default function App() {
   const [types,setTypes]=useState(INIT_TYPES);
   const [noteCats,setNoteCats]=useState(["入境","交通","退稅","禮儀","緊急聯絡","其他"]);
   const [noteCatsByCountry,setNoteCatsByCountry]=useState<any>({});
+  const [cityOrderByCountry,setCityOrderByCountry]=useState<any>({});
   const [geoData,setGeoData]=useState(GEO);
   const [history,setHistory]=useState(["home"]);
   const [selected,setSelected]=useState<any>(null);
@@ -3754,6 +3817,7 @@ export default function App() {
         }
         if(s.note_cats?.length) setNoteCats(s.note_cats);
         if(s.note_cats_by_country && typeof s.note_cats_by_country==='object' && !Array.isArray(s.note_cats_by_country)) setNoteCatsByCountry(s.note_cats_by_country);
+        if(s.city_order_by_country && typeof s.city_order_by_country==='object' && !Array.isArray(s.city_order_by_country)) setCityOrderByCountry(s.city_order_by_country);
         if(s.geo_data && Object.keys(s.geo_data).length){
           // 把儲存的自訂商圈合併進 GEO
           const merged = {...GEO};
@@ -3964,7 +4028,9 @@ export default function App() {
           background:"#F5F0EB",
         }}>
           {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} onAutoAddNb={autoAddNeighborhood} />}
-          {page==="country"&&<CountryPage country={selectedCountry!} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
+          {page==="country"&&<CountryPage country={selectedCountry!} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}}
+            cityOrder={cityOrderByCountry[selectedCountry!]||[]}
+            onUpdateCityOrder={async (country:string, list:string[])=>{ const next={...cityOrderByCountry,[country]:list}; setCityOrderByCountry(next); await saveSettings({city_order_by_country:next}); }} />}
           {page==="search"&&<Search places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
           {page==="notes"&&<Notes onBack={goBack} countries={countries} noteCatsByCountry={noteCatsByCountry} onUpdateCats={async (country:string, list:string[])=>{ const next={...noteCatsByCountry,[country]:list}; setNoteCatsByCountry(next); await saveSettings({note_cats_by_country:next}); }} />}
           {page==="trips"&&<Trips trips={trips} onBack={goBack} onOpen={openTrip} onNew={()=>{ setEditingTrip(null); setHistory(h=>[...h,"tripForm"]); }} />}
