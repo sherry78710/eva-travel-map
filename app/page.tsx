@@ -2815,6 +2815,66 @@ function renderNoteContent(text:string){
   return out;
 }
 
+// ── 單張備忘錄卡片（收合／展開）─────────────────────────────────────────────
+function NoteCard({ note, isLast, onEdit, onDelete, onLightbox }:any){
+  const [expanded,setExpanded]=useState(false);
+  const [textOverflow,setTextOverflow]=useState(false);
+  const textRef=useRef<HTMLDivElement>(null);
+  const photos=note.photos||[];
+  const hasText=!!(note.content && note.content.trim());
+  // 收合狀態下，量測文字是否超過 5 行
+  useEffect(()=>{
+    if(!expanded && textRef.current){
+      setTextOverflow(textRef.current.scrollHeight > textRef.current.clientHeight + 1);
+    }
+  },[note.content,expanded,photos.length]);
+  const morePhotos=photos.length>5;
+  const showMore=!expanded && (textOverflow || morePhotos);
+  return (
+    <div onClick={()=>setExpanded(v=>!v)} style={{padding:"14px 16px",borderBottom:isLast?"none":"1px solid #EDE8E2",background:"#FDF8F3",cursor:"pointer"}}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+        <div style={{flex:1,minWidth:0}}>
+          {hasText && (
+            <div ref={textRef} style={{
+              fontSize:15,color:"#000",lineHeight:1.6,whiteSpace:"pre-line",wordBreak:"break-word",
+              ...(expanded?{}:{display:"-webkit-box",WebkitLineClamp:5,WebkitBoxOrient:"vertical",overflow:"hidden"})
+            }}>{renderNoteContent(note.content)}</div>
+          )}
+        </div>
+        <div onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:14,flexShrink:0}}>
+          <button onClick={()=>onEdit(note)} style={{background:"none",border:"none",color:"#007AFF",fontSize:13,cursor:"pointer",padding:0}}>編輯</button>
+          <button onClick={()=>onDelete(note.id)} style={{background:"none",border:"none",color:"#C7C7CC",fontSize:18,cursor:"pointer",padding:"4px 2px",lineHeight:1}}>×</button>
+        </div>
+      </div>
+      {photos.length>0 && (
+        expanded ? (
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+            {photos.map((p:string,pi:number)=>(
+              <div key={pi} onClick={e=>{ e.stopPropagation(); onLightbox(photos,pi); }} style={{width:64,height:64,borderRadius:8,overflow:"hidden",cursor:"pointer",flexShrink:0}}>
+                <img src={p} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{display:"flex",gap:6,marginTop:8}}>
+            {photos.slice(0,5).map((p:string,pi:number)=>(
+              <div key={pi} onClick={e=>{ e.stopPropagation(); onLightbox(photos,pi); }} style={{width:"calc((100% - 24px)/5)",aspectRatio:"1",borderRadius:8,overflow:"hidden",cursor:"pointer",flexShrink:0}}>
+                <img src={p} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} />
+              </div>
+            ))}
+          </div>
+        )
+      )}
+      {showMore && (
+        <div style={{marginTop:8,fontSize:13,color:"#007AFF"}}>看更多{morePhotos?` · 共 ${photos.length} 張照片`:""}</div>
+      )}
+      {expanded && (hasText||photos.length>0) && (
+        <div style={{marginTop:8,fontSize:13,color:"#8E8E93"}}>收合</div>
+      )}
+    </div>
+  );
+}
+
 function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats }) {
   const [country,setCountry]=useState(countries[0]||"韓國");
   const [notes,setNotes]=useState<any[]>([]);
@@ -2880,6 +2940,7 @@ function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats }) {
   }
 
   async function handleDelete(id:string) {
+    if(!window.confirm("確定要刪除這則備忘錄嗎？")) return;
     await sb.from('country_notes').delete().eq('id',id);
     setNotes(ns=>ns.filter(n=>n.id!==id));
   }
@@ -2901,54 +2962,6 @@ function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats }) {
     if(c && !cats.includes(c)) onUpdateCats(country, [...cats, c]);
     setNewCat(c||newCat);
     setNewCatInput(""); setShowCatInput(false);
-  }
-
-  // ── 備忘錄卡片拖拉排序（同一類別內，邏輯與「類別管理」拖拉一致：
-  //     開始拖曳時先量好每張卡片高度，過程中純用數學算位置，不再依賴放開當下讀取畫面）──
-  const [dragId,setDragId]=useState<string|null>(null);
-  const [dragCat,setDragCat]=useState<string|null>(null);
-  const [dragIdx,setDragIdx]=useState<number|null>(null);
-  const [overIdx,setOverIdx]=useState<number|null>(null);
-  const [dragY,setDragY]=useState(0);
-  const dragStartY=useRef(0);
-  const itemHeights=useRef<number[]>([]);
-  const noteRefs=useRef<any>({});
-  function noteDStart(e:any, cat:string, id:string, idx:number){
-    e.preventDefault();
-    dragStartY.current=e.touches[0].clientY;
-    const catNotes=grouped[cat]||[];
-    itemHeights.current=catNotes.map((n:any)=>{ const el=noteRefs.current[n.id]; return el?el.getBoundingClientRect().height:60; });
-    setDragId(id); setDragCat(cat); setDragIdx(idx); setOverIdx(idx); setDragY(0);
-  }
-  function noteDMove(e:any){
-    if(dragIdx===null) return;
-    e.preventDefault();
-    const dy=e.touches[0].clientY-dragStartY.current;
-    setDragY(dy);
-    const heights=itemHeights.current;
-    let idx=dragIdx;
-    if(dy>0){
-      let remaining=dy, i=dragIdx;
-      while(i<heights.length-1 && remaining>(heights[i+1]||60)/2){ remaining-=(heights[i+1]||60); i++; }
-      idx=i;
-    } else if(dy<0){
-      let remaining=-dy, i=dragIdx;
-      while(i>0 && remaining>(heights[i-1]||60)/2){ remaining-=(heights[i-1]||60); i--; }
-      idx=i;
-    }
-    setOverIdx(Math.max(0,Math.min(heights.length-1,idx)));
-  }
-  async function noteDEnd(){
-    const from=dragIdx, to=overIdx, cat=dragCat;
-    setDragId(null); setDragCat(null); setDragIdx(null); setOverIdx(null); setDragY(0);
-    if(from===null||to===null||cat===null||from===to) return;
-    const arr=[...(grouped[cat]||[])];
-    const [mv]=arr.splice(from,1); arr.splice(to,0,mv);
-    // 重新指派 sort_order（由上而下遞減，最上面最大）
-    const base=Date.now();
-    const updated=arr.map((n:any,i:number)=>({ ...n, sort_order: base-i }));
-    setNotes(ns=>ns.map(n=>{ const u=updated.find((x:any)=>x.id===n.id); return u?u:n; }));
-    await Promise.all(updated.map((n:any)=>sb.from('country_notes').update({sort_order:n.sort_order}).eq('id',n.id)));
   }
 
   return (
@@ -3059,36 +3072,16 @@ function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats }) {
           <div key={cat} style={{marginBottom:14}}>
             <div style={{fontSize:11,color:"#8E8E93",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>{cat}</div>
             <div style={{background:"#FDF8F3",borderRadius:16,overflow:"hidden"}}>
-              {catNotes.map((n:any,i:number)=>{
-                const dragging=dragId===n.id;
-                let ty=0;
-                if(dragCat===cat && dragIdx!==null && overIdx!==null && !dragging){
-                  const draggedH=itemHeights.current[dragIdx]||0;
-                  if(dragIdx<overIdx && i>dragIdx && i<=overIdx) ty=-draggedH;
-                  else if(dragIdx>overIdx && i<dragIdx && i>=overIdx) ty=draggedH;
-                }
-                return (
-                <div key={n.id} ref={el=>{ noteRefs.current[n.id]=el; }} style={{padding:"14px 16px",borderBottom:i<catNotes.length-1?"1px solid #EDE8E2":"none",background:dragging?"#F1ECE5":"#FDF8F3",transform:dragging?`translateY(${dragY}px)`:`translateY(${ty}px)`,transition:dragging?"none":"transform 0.2s ease",opacity:dragging?0.92:1,position:"relative",zIndex:dragging?20:1}}>
-                  <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
-                    <div style={{flex:1,fontSize:15,color:"#000",lineHeight:1.6,whiteSpace:"pre-line",wordBreak:"break-word"}}>{renderNoteContent(n.content)}</div>
-                    <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                      <button onClick={()=>setEditingNote({...n,photos:n.photos||[]})} style={{background:"none",border:"none",color:"#007AFF",fontSize:13,cursor:"pointer",padding:0}}>編輯</button>
-                      <button onClick={()=>handleDelete(n.id)} style={{background:"none",border:"none",color:"#C7C7CC",fontSize:18,cursor:"pointer",padding:0}}>×</button>
-                      <span onTouchStart={e=>noteDStart(e,cat,n.id,i)} onTouchMove={noteDMove} onTouchEnd={noteDEnd} onTouchCancel={noteDEnd} style={{fontSize:17,color:"#C7C7CC",padding:"0 2px",touchAction:"none",cursor:"grab"}}>⠿</span>
-                    </div>
-                  </div>
-                  {(n.photos||[]).length>0 && (
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-                      {(n.photos||[]).map((p:string,pi:number)=>(
-                        <div key={pi} onClick={()=>setLightbox({photos:n.photos,index:pi})} style={{width:64,height:64,borderRadius:8,overflow:"hidden",cursor:"pointer",flexShrink:0}}>
-                          <img src={p} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                );
-              })}
+              {catNotes.map((n:any,i:number)=>(
+                <NoteCard
+                  key={n.id}
+                  note={n}
+                  isLast={i===catNotes.length-1}
+                  onEdit={(note:any)=>setEditingNote({...note,photos:note.photos||[]})}
+                  onDelete={(id:string)=>handleDelete(id)}
+                  onLightbox={(photos:string[],index:number)=>setLightbox({photos,index})}
+                />
+              ))}
             </div>
           </div>
           );
