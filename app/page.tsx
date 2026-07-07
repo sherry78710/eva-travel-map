@@ -2967,8 +2967,8 @@ function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats }) {
         </div>
       </div>
 
-      {/* 滾動區域 */}
-      <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"12px 20px 40px"}}>
+      {/* 滾動區域（不加 WebkitOverflowScrolling:touch，否則 iOS 慣性捲動會搶走卡片的拖拉手勢）*/}
+      <div style={{flex:1,overflowY:"auto",padding:"12px 20px 40px"}}>
 
         {/* 管理類別入口 */}
         <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
