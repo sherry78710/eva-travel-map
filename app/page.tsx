@@ -2846,7 +2846,11 @@ function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats }) {
       .then(({data})=>{ if(data) setNotes(data); setLoading(false); });
   },[]);
 
-  const filtered=notes.filter(n=>n.country===country);
+  const filtered=notes.filter(n=>n.country===country).sort((a:any,b:any)=>{
+    const sa = a.sort_order ?? -Infinity, sb = b.sort_order ?? -Infinity;
+    if (sb !== sa) return sb - sa;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
   const grouped:any={};
   filtered.forEach(n=>{ if(!grouped[n.category]) grouped[n.category]=[]; grouped[n.category].push(n); });
   // 類別順序：先照自訂類別清單，剩下的（例如已刪除的類別但還有舊備忘）接在後面
