@@ -2916,14 +2916,20 @@ function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats }) {
     const y=e.changedTouches[0].clientY;
     const arr=[...(grouped[dragCat]||[])];
     const from=arr.findIndex((n:any)=>n.id===dragId);
-    let to=arr.length-1;
-    for(let i=0;i<arr.length;i++){ const el=noteRefs.current[arr[i].id]; if(!el) continue; const r=el.getBoundingClientRect(); if(y < r.top + r.height/2){ to=i; break; } }
+    if(from<0){ setDragId(null); setDragCat(null); setDragY(0); return; }
+    // 判斷目標位置時排除自己（拖曳中卡片的位置一直跟著手指移動，
+    // 若把自己也算進去，幾乎必然最先命中，導致誤判為「沒有移動」）
+    const siblings=arr.filter((n:any)=>n.id!==dragId);
+    let to=siblings.length;
+    for(let i=0;i<siblings.length;i++){ const el=noteRefs.current[siblings[i].id]; if(!el) continue; const r=el.getBoundingClientRect(); if(y < r.top + r.height/2){ to=i; break; } }
     setDragId(null); setDragCat(null); setDragY(0);
-    if(from<0||from===to) return;
-    const [mv]=arr.splice(from,1); arr.splice(to,0,mv);
+    const mv=arr[from];
+    const newArr=[...siblings];
+    newArr.splice(to,0,mv);
+    if(newArr.every((n:any,i:number)=>n.id===arr[i]?.id)) return; // 順序沒變就不用更新
     // 重新指派 sort_order（由上而下遞減，最上面最大）
     const base=Date.now();
-    const updated=arr.map((n:any,i:number)=>({ ...n, sort_order: base-i }));
+    const updated=newArr.map((n:any,i:number)=>({ ...n, sort_order: base-i }));
     setNotes(ns=>ns.map(n=>{ const u=updated.find((x:any)=>x.id===n.id); return u?u:n; }));
     await Promise.all(updated.map((n:any)=>sb.from('country_notes').update({sort_order:n.sort_order}).eq('id',n.id)));
   }
