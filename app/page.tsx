@@ -1242,7 +1242,7 @@ function Settings({ countries, types, countryOrder, geoData, showNextTrip, onTog
 }
 
 // ── Home ──────────────────────────────────────────────────────────────────────
-function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onTrips, onOpenTrip, onCountry }) {
+function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onTrips, onOpenTrip, onCountry, inboxCount=0 }) {
   const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
   const byCountry:any = {};
   places.forEach((p:any)=>{ byCountry[p.country]=(byCountry[p.country]||0)+1; });
@@ -1259,14 +1259,18 @@ function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onT
       <div style={{ flexShrink:0, background:"#F5F0EB", paddingTop:"env(safe-area-inset-top)" }}>
         {/* 按鈕列 */}
         <div style={{ background:"#FDF8F3", padding:"12px 20px 14px" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
-            <div style={{ display:"flex", gap:8, overflowX:"auto", flex:1, minWidth:0, WebkitOverflowScrolling:"touch" }}>
-              <button onClick={()=>onNav("add")} style={{ flexShrink:0, padding:"10px 18px", background:"#000", borderRadius:22, fontSize:14, fontWeight:600, color:"white", border:"none", cursor:"pointer", whiteSpace:"nowrap" }}>+ 新增收藏</button>
-              <button onClick={onTrips} style={{ flexShrink:0, padding:"10px 16px", background:"#F5F0EB", borderRadius:22, fontSize:14, color:"#000", border:"none", cursor:"pointer", whiteSpace:"nowrap" }}>行程</button>
-              <button onClick={()=>onNav("search")} style={{ flexShrink:0, padding:"10px 16px", background:"#F5F0EB", borderRadius:22, fontSize:14, color:"#000", border:"none", cursor:"pointer", whiteSpace:"nowrap" }}>搜尋</button>
-              <button onClick={()=>onNav("notes")} style={{ flexShrink:0, padding:"10px 16px", background:"#F5F0EB", borderRadius:22, fontSize:14, color:"#000", border:"none", cursor:"pointer", whiteSpace:"nowrap" }}>備忘錄</button>
+          <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+            <div style={{ display:"flex", gap:6, flex:1, minWidth:0 }}>
+              <button onClick={()=>onNav("add")} style={{ flex:1, minWidth:0, padding:"9px 4px", background:"#000", borderRadius:20, fontSize:13, fontWeight:600, color:"white", border:"none", cursor:"pointer", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>＋收藏</button>
+              <button onClick={onTrips} style={{ flex:1, minWidth:0, padding:"9px 4px", background:"#F5F0EB", borderRadius:20, fontSize:13, color:"#000", border:"none", cursor:"pointer", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>行程</button>
+              <button onClick={()=>onNav("search")} style={{ flex:1, minWidth:0, padding:"9px 4px", background:"#F5F0EB", borderRadius:20, fontSize:13, color:"#000", border:"none", cursor:"pointer", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>搜尋</button>
+              <button onClick={()=>onNav("notes")} style={{ flex:1, minWidth:0, padding:"9px 4px", background:"#F5F0EB", borderRadius:20, fontSize:13, color:"#000", border:"none", cursor:"pointer", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>備忘錄</button>
+              <button onClick={()=>onNav("inbox")} style={{ flex:1, minWidth:0, position:"relative", padding:"9px 4px", background:"#F5F0EB", borderRadius:20, fontSize:13, color:"#000", border:"none", cursor:"pointer", whiteSpace:"nowrap", overflow:"visible", textOverflow:"ellipsis" }}>
+                待整理
+                {inboxCount>0 && <span style={{ position:"absolute", top:-5, right:-3, minWidth:18, height:18, padding:"0 4px", background:"#E4A11B", color:"#fff", fontSize:10.5, fontWeight:700, borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center", border:"2px solid #FDF8F3" }}>{inboxCount>99?"99+":inboxCount}</span>}
+              </button>
             </div>
-            <button onClick={()=>onNav("settings")} style={{ background:"#F5F0EB", border:"none", borderRadius:12, width:38, height:38, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:17, flexShrink:0 }}>⚙️</button>
+            <button onClick={()=>onNav("settings")} style={{ background:"#F5F0EB", border:"none", borderRadius:11, width:36, height:36, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:16, flexShrink:0 }}>⚙️</button>
           </div>
         </div>
         {/* 下一趟行程（可在設定關閉）*/}
@@ -2815,6 +2819,97 @@ function renderNoteContent(text:string){
   return out;
 }
 
+// ── 待整理：判斷連結來源 + 相對時間 ─────────────────────────────────────────
+function inboxSource(url:string){
+  const u=(url||"").toLowerCase();
+  if(u.includes("threads.com")||u.includes("threads.net")) return {key:"threads", label:"Threads", icon:"@", bg:"#000"};
+  if(u.includes("instagram.com")) return {key:"ig", label:"Instagram", icon:"◎", bg:"linear-gradient(45deg,#F09433,#E6683C,#DC2743,#CC2366,#BC1888)"};
+  return {key:"web", label:"網頁", icon:"↗", bg:"#8E8E93"};
+}
+function timeAgo(iso:string){
+  const t=new Date(iso).getTime(); if(isNaN(t)) return "";
+  const s=Math.floor((Date.now()-t)/1000);
+  if(s<60) return "剛剛";
+  const m=Math.floor(s/60); if(m<60) return `${m} 分鐘前`;
+  const h=Math.floor(m/60); if(h<24) return `${h} 小時前`;
+  const d=Math.floor(h/24); if(d<7) return `${d} 天前`;
+  const w=Math.floor(d/7); if(w<5) return `${w} 週前`;
+  const mo=Math.floor(d/30); if(mo<12) return `${mo} 個月前`;
+  return `${Math.floor(d/365)} 年前`;
+}
+function cleanDisplayUrl(url:string){
+  return (url||"").replace(/^https?:\/\//,"").replace(/^www\./,"");
+}
+
+// ── 待整理區（收件匣）──────────────────────────────────────────────────────
+function Inbox({ onBack, countries, inbox, onAdd, onDelete }:any){
+  const [country,setCountry]=useState(countries[0]||"韓國");
+  const [url,setUrl]=useState("");
+  const [note,setNote]=useState("");
+  const [saving,setSaving]=useState(false);
+  const items=inbox.filter((x:any)=>x.country===country);
+
+  async function save(){
+    const link=url.trim();
+    if(!link || saving) return;
+    setSaving(true);
+    await onAdd(country, link, note.trim());
+    setUrl(""); setNote(""); setSaving(false);
+  }
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",width:"100%",height:"100%",background:"#F5F0EB"}}>
+      {/* 固定頂部 */}
+      <div style={{flexShrink:0,background:"#FDF8F3",paddingTop:"calc(env(safe-area-inset-top) + 12px)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0 20px 12px"}}>
+          <button onClick={onBack} style={{background:"none",border:"none",color:"#007AFF",fontSize:16,cursor:"pointer",padding:0}}>‹ 返回</button>
+          <div style={{fontSize:17,fontWeight:600}}>待整理</div>
+          <div style={{width:44}} />
+        </div>
+        <div style={{display:"flex",overflowX:"auto",borderTop:"1px solid #EDE8E2"}}>
+          {countries.map((c:string)=>(
+            <button key={c} onClick={()=>setCountry(c)} style={{flexShrink:0,padding:"10px 16px",border:"none",background:"none",borderBottom:country===c?"2px solid #000":"2px solid transparent",color:country===c?"#000":"#8E8E93",fontSize:14,fontWeight:country===c?600:400,cursor:"pointer"}}>{c}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* 滾動區 */}
+      <div style={{flex:1,overflowY:"auto",padding:"14px 20px 40px"}}>
+        {/* 貼上連結 */}
+        <div style={{display:"flex",gap:8,marginBottom:8}}>
+          <input value={url} onChange={e=>setUrl(e.target.value)} placeholder="🔗 貼上連結…" inputMode="url"
+            style={{flex:1,minWidth:0,border:"none",borderRadius:12,padding:"11px 14px",fontSize:14,outline:"none",background:"#FDF8F3",fontFamily:"inherit",color:"#000"}} />
+          <button onClick={save} disabled={saving||!url.trim()} style={{padding:"0 18px",border:"none",borderRadius:12,background:(saving||!url.trim())?"#C7C7CC":"#000",color:"#fff",fontSize:14,fontWeight:600,cursor:(saving||!url.trim())?"default":"pointer",flexShrink:0}}>{saving?"…":"存"}</button>
+        </div>
+        <input value={note} onChange={e=>setNote(e.target.value)} placeholder="備註（可留空）"
+          style={{width:"100%",border:"none",borderRadius:12,padding:"10px 14px",fontSize:13,outline:"none",background:"#FDF8F3",fontFamily:"inherit",color:"#000",marginBottom:8}} />
+        <div style={{fontSize:11.5,color:"#A69C90",margin:"2px 2px 18px",lineHeight:1.5}}>看到貼文用「分享 → 新增旅遊連結」也會進到這裡（第二階段開放）。</div>
+
+        {items.length===0 && <div style={{textAlign:"center",padding:"50px 0",color:"#8E8E93",fontSize:15}}>{country} 沒有待整理的連結</div>}
+
+        {items.length>0 && <div style={{fontSize:11,color:"#8E8E93",letterSpacing:1,textTransform:"uppercase",margin:"0 2px 8px"}}>待整理 {items.length}</div>}
+
+        {items.map((it:any)=>{
+          const src=inboxSource(it.url);
+          return (
+          <div key={it.id} style={{background:"#FDF8F3",borderRadius:16,padding:"14px 15px",marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+              <div style={{width:34,height:34,borderRadius:9,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color:"#fff",background:src.bg}}>{src.icon}</div>
+              <a href={it.url} target="_blank" rel="noreferrer" style={{flex:1,minWidth:0,textDecoration:"none"}}>
+                <div style={{fontSize:14,color:"#007AFF",wordBreak:"break-all",lineHeight:1.45}}>{cleanDisplayUrl(it.url)}</div>
+                <div style={{fontSize:12,color:"#A69C90",marginTop:5}}>{src.label} · {timeAgo(it.created_at)}</div>
+                {it.note && <div style={{fontSize:13,color:"#5A5147",marginTop:6,lineHeight:1.5,wordBreak:"break-word"}}>{it.note}</div>}
+              </a>
+              <button onClick={()=>{ if(window.confirm("確定要刪除這筆待整理連結嗎？")) onDelete(it.id); }} style={{background:"none",border:"none",color:"#C7C7CC",fontSize:18,cursor:"pointer",padding:"2px 2px",lineHeight:1,flexShrink:0}}>×</button>
+            </div>
+          </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── 單張備忘錄卡片（收合／展開）─────────────────────────────────────────────
 function NoteCard({ note, isLast, onEdit, onDelete, onLightbox }:any){
   const [expanded,setExpanded]=useState(false);
@@ -3816,6 +3911,7 @@ export default function App() {
   const [selected,setSelected]=useState<any>(null);
   const [selectedCountry,setSelectedCountry]=useState<string|null>(null);
   const [trips,setTrips]=useState<any[]>([]);
+  const [inbox,setInbox]=useState<any[]>([]);
   const [selectedTripId,setSelectedTripId]=useState<string|null>(null);
   const [editingTrip,setEditingTrip]=useState<any>(null);
   const [showNextTrip,setShowNextTrip]=useState(true);
@@ -3864,6 +3960,24 @@ export default function App() {
       setLoading(false);
     }).catch(()=>setLoading(false));
   },[]);
+
+  // ── 載入待整理連結（獨立載入，即使資料表尚未建立也不影響其他資料）──
+  useEffect(()=>{
+    sb.from('inbox_links').select('*').order('created_at',{ascending:false})
+      .then(({data,error})=>{ if(error){ console.warn('inbox_links 載入失敗（可能尚未建立資料表）:', error.message); return; } if(data) setInbox(data); });
+  },[]);
+
+  // ── 待整理：新增 / 刪除 ──
+  async function handleAddInbox(country:string, url:string, note:string){
+    const payload={ country, url, note:note||'' };
+    const {data,error}=await sb.from('inbox_links').insert([payload]).select().single();
+    if(!error && data) setInbox(xs=>[data,...xs]);
+    else { console.error('handleAddInbox error:', error); alert('存入失敗：' + (error?.message || '請確認已建立 inbox_links 資料表')); }
+  }
+  async function handleDeleteInbox(id:string){
+    const {error}=await sb.from('inbox_links').delete().eq('id',id);
+    if(!error) setInbox(xs=>xs.filter(x=>x.id!==id));
+  }
 
   // ── 儲存設定到 Supabase ──
   async function saveSettings(patch: any){
@@ -4039,7 +4153,7 @@ export default function App() {
 
       {/* 底層：Home 永遠存在 */}
       <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",flexDirection:"column"}}>
-        <Home places={places} countries={countries} countryOrder={countryOrder} trips={trips} showNextTrip={showNextTrip} onNav={nav} onTrips={()=>setHistory(h=>[...h,"trips"])} onOpenTrip={openTrip} onCountry={c=>{setSelectedCountry(c);setHistory(h=>[...h,"country"]);}} />
+        <Home places={places} countries={countries} countryOrder={countryOrder} trips={trips} showNextTrip={showNextTrip} onNav={nav} onTrips={()=>setHistory(h=>[...h,"trips"])} onOpenTrip={openTrip} onCountry={c=>{setSelectedCountry(c);setHistory(h=>[...h,"country"]);}} inboxCount={inbox.length} />
       </div>
 
       {/* 上層頁面：疊在 Home 上面，右滑時往右移動 */}
@@ -4059,6 +4173,7 @@ export default function App() {
             onUpdateCityOrder={async (country:string, list:string[])=>{ const next={...cityOrderByCountry,[country]:list}; setCityOrderByCountry(next); await saveSettings({city_order_by_country:next}); }} />}
           {page==="search"&&<Search places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
           {page==="notes"&&<Notes onBack={goBack} countries={countries} noteCatsByCountry={noteCatsByCountry} onUpdateCats={async (country:string, list:string[])=>{ const next={...noteCatsByCountry,[country]:list}; setNoteCatsByCountry(next); await saveSettings({note_cats_by_country:next}); }} />}
+          {page==="inbox"&&<Inbox onBack={goBack} countries={countries} inbox={inbox} onAdd={handleAddInbox} onDelete={handleDeleteInbox} />}
           {page==="trips"&&<Trips trips={trips} onBack={goBack} onOpen={openTrip} onNew={()=>{ setEditingTrip(null); setHistory(h=>[...h,"tripForm"]); }} />}
           {page==="tripForm"&&<TripForm initial={editingTrip} countries={countries} geoData={geoData} onBack={goBack} onSave={editingTrip?handleUpdateTrip:handleAddTrip} onDelete={editingTrip?handleDeleteTrip:undefined} />}
           {page==="tripDetail"&&(()=>{ const t=trips.find(x=>x.id===selectedTripId); return t?<TripDetail trip={t} places={places} onBack={goBack} onSaveDays={handleSaveTripDays} onEditTrip={(tr:any)=>{ setEditingTrip(tr); setHistory(h=>[...h,"tripForm"]); }} onOpenPlace={(p:any)=>{ setSelected(p); setHistory(h=>[...h,"detail"]); }} />:null; })()}
