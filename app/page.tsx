@@ -1242,7 +1242,7 @@ function Settings({ countries, types, countryOrder, geoData, showNextTrip, onTog
 }
 
 // ── Home ──────────────────────────────────────────────────────────────────────
-function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onTrips, onOpenTrip, onCountry, inboxCount=0 }) {
+function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onTrips, onOpenTrip, onCountry, inboxCount=0, onAddNew, onNotes }) {
   const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
   const byCountry:any = {};
   places.forEach((p:any)=>{ byCountry[p.country]=(byCountry[p.country]||0)+1; });
@@ -1261,10 +1261,10 @@ function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onT
         <div style={{ background:"#FDF8F3", padding:"12px 20px 14px" }}>
           <div style={{ display:"flex", alignItems:"center", gap:7 }}>
             <div style={{ display:"flex", gap:6, flex:1, minWidth:0 }}>
-              <button onClick={()=>onNav("add")} style={{ flex:1, minWidth:0, padding:"9px 4px", background:"#000", borderRadius:20, fontSize:13, fontWeight:600, color:"white", border:"none", cursor:"pointer", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>＋收藏</button>
+              <button onClick={onAddNew} style={{ flex:1, minWidth:0, padding:"9px 4px", background:"#000", borderRadius:20, fontSize:13, fontWeight:600, color:"white", border:"none", cursor:"pointer", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>＋收藏</button>
               <button onClick={onTrips} style={{ flex:1, minWidth:0, padding:"9px 4px", background:"#F5F0EB", borderRadius:20, fontSize:13, color:"#000", border:"none", cursor:"pointer", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>行程</button>
               <button onClick={()=>onNav("search")} style={{ flex:1, minWidth:0, padding:"9px 4px", background:"#F5F0EB", borderRadius:20, fontSize:13, color:"#000", border:"none", cursor:"pointer", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>搜尋</button>
-              <button onClick={()=>onNav("notes")} style={{ flex:1, minWidth:0, padding:"9px 4px", background:"#F5F0EB", borderRadius:20, fontSize:13, color:"#000", border:"none", cursor:"pointer", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>備忘錄</button>
+              <button onClick={onNotes} style={{ flex:1, minWidth:0, padding:"9px 4px", background:"#F5F0EB", borderRadius:20, fontSize:13, color:"#000", border:"none", cursor:"pointer", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>備忘錄</button>
               <button onClick={()=>onNav("inbox")} style={{ flex:1, minWidth:0, position:"relative", padding:"9px 4px", background:"#F5F0EB", borderRadius:20, fontSize:13, color:"#000", border:"none", cursor:"pointer", whiteSpace:"nowrap", overflow:"visible", textOverflow:"ellipsis" }}>
                 待整理
                 {inboxCount>0 && <span style={{ position:"absolute", top:-5, right:-3, minWidth:18, height:18, padding:"0 4px", background:"#E4A11B", color:"#fff", fontSize:10.5, fontWeight:700, borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center", border:"2px solid #FDF8F3" }}>{inboxCount>99?"99+":inboxCount}</span>}
@@ -2327,8 +2327,8 @@ function parseAddress(addr, geoData) {
   };
 }
 
-function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb }) {
-  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[],branches:[] });
+function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb, initial, convertInboxId, onConverted }:any) {
+  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[],branches:[], ...(initial||{}) });
   const [saving,setSaving] = useState(false);
   const photoInputRef = useRef(null);
   const set=(k:string,v:any)=>setF((x:any)=>({...x,[k]:v}));
@@ -2371,6 +2371,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       onAutoAddNb(f.country, f.city, f.district, f.neighborhood);
     }
     onAdd({...f, id:String(Date.now()), status:"wishlist"});
+    if(convertInboxId && onConverted) onConverted(convertInboxId);
     onBack();
   }
 
@@ -2842,11 +2843,12 @@ function cleanDisplayUrl(url:string){
 }
 
 // ── 待整理區（收件匣）──────────────────────────────────────────────────────
-function Inbox({ onBack, countries, inbox, onAdd, onDelete }:any){
+function Inbox({ onBack, countries, inbox, onAdd, onDelete, onConvertPlace, onConvertNote }:any){
   const [country,setCountry]=useState(countries[0]||"韓國");
   const [url,setUrl]=useState("");
   const [note,setNote]=useState("");
   const [saving,setSaving]=useState(false);
+  const [sheetItem,setSheetItem]=useState<any>(null);
   const items=inbox.filter((x:any)=>x.country===country);
 
   async function save(){
@@ -2892,20 +2894,37 @@ function Inbox({ onBack, countries, inbox, onAdd, onDelete }:any){
         {items.map((it:any)=>{
           const src=inboxSource(it.url);
           return (
-          <div key={it.id} style={{background:"#FDF8F3",borderRadius:16,padding:"14px 15px",marginBottom:10}}>
+          <div key={it.id} onClick={()=>setSheetItem(it)} style={{background:"#FDF8F3",borderRadius:16,padding:"14px 15px",marginBottom:10,cursor:"pointer"}}>
             <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
               <div style={{width:34,height:34,borderRadius:9,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color:"#fff",background:src.bg}}>{src.icon}</div>
-              <a href={it.url} target="_blank" rel="noreferrer" style={{flex:1,minWidth:0,textDecoration:"none"}}>
+              <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:14,color:"#007AFF",wordBreak:"break-all",lineHeight:1.45}}>{cleanDisplayUrl(it.url)}</div>
                 <div style={{fontSize:12,color:"#A69C90",marginTop:5}}>{src.label} · {timeAgo(it.created_at)}</div>
                 {it.note && <div style={{fontSize:13,color:"#5A5147",marginTop:6,lineHeight:1.5,wordBreak:"break-word"}}>{it.note}</div>}
-              </a>
-              <button onClick={()=>{ if(window.confirm("確定要刪除這筆待整理連結嗎？")) onDelete(it.id); }} style={{background:"none",border:"none",color:"#C7C7CC",fontSize:18,cursor:"pointer",padding:"2px 2px",lineHeight:1,flexShrink:0}}>×</button>
+              </div>
+              <span style={{color:"#C7C7CC",fontSize:20,alignSelf:"center",flexShrink:0}}>›</span>
             </div>
           </div>
           );
         })}
       </div>
+
+      {/* 動作選單 */}
+      {sheetItem && (
+        <div onClick={()=>setSheetItem(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:"0 10px calc(env(safe-area-inset-bottom) + 12px)"}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#F2EDE7",borderRadius:16,overflow:"hidden",marginBottom:8}}>
+            <div style={{padding:"14px 16px 12px",borderBottom:"1px solid #E2DBD2"}}>
+              <div style={{fontSize:13,color:"#007AFF",wordBreak:"break-all"}}>{cleanDisplayUrl(sheetItem.url)}</div>
+              <div style={{fontSize:11.5,color:"#A69C90",marginTop:4}}>{sheetItem.note?sheetItem.note+" · ":""}{inboxSource(sheetItem.url).label} · {timeAgo(sheetItem.created_at)}</div>
+            </div>
+            <a href={sheetItem.url} target="_blank" rel="noreferrer" onClick={()=>setSheetItem(null)} style={{display:"flex",alignItems:"center",gap:12,padding:"15px 16px",fontSize:16,color:"#000",textDecoration:"none",borderBottom:"1px solid #E2DBD2"}}><span style={{width:26,textAlign:"center",fontSize:17}}>🔗</span>開啟連結</a>
+            <button onClick={()=>{ const it=sheetItem; setSheetItem(null); onConvertPlace(it); }} style={{display:"flex",alignItems:"center",gap:12,padding:"15px 16px",fontSize:16,color:"#000",background:"none",border:"none",borderBottom:"1px solid #E2DBD2",width:"100%",cursor:"pointer",textAlign:"left"}}><span style={{width:26,textAlign:"center",fontSize:17}}>📍</span>轉成收藏地點<span style={{fontSize:12,color:"#A69C90",marginLeft:"auto"}}>網址自動帶入</span></button>
+            <button onClick={()=>{ const it=sheetItem; setSheetItem(null); onConvertNote(it); }} style={{display:"flex",alignItems:"center",gap:12,padding:"15px 16px",fontSize:16,color:"#000",background:"none",border:"none",borderBottom:"1px solid #E2DBD2",width:"100%",cursor:"pointer",textAlign:"left"}}><span style={{width:26,textAlign:"center",fontSize:17}}>📝</span>轉成備忘錄</button>
+            <button onClick={()=>{ const id=sheetItem.id; if(window.confirm("確定要刪除這筆待整理連結嗎？")){ setSheetItem(null); onDelete(id); } }} style={{display:"flex",alignItems:"center",gap:12,padding:"15px 16px",fontSize:16,color:"#FF3B30",background:"none",border:"none",width:"100%",cursor:"pointer",textAlign:"left"}}><span style={{width:26,textAlign:"center",fontSize:17}}>🗑</span>刪除</button>
+          </div>
+          <button onClick={()=>setSheetItem(null)} style={{background:"#FDF8F3",borderRadius:16,textAlign:"center",padding:15,fontSize:16,fontWeight:600,color:"#007AFF",border:"none",width:"100%",cursor:"pointer"}}>取消</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -2970,7 +2989,7 @@ function NoteCard({ note, isLast, onEdit, onDelete, onLightbox }:any){
   );
 }
 
-function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats }) {
+function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats, convertDraft, onConverted }:any) {
   const [country,setCountry]=useState(countries[0]||"韓國");
   const [notes,setNotes]=useState<any[]>([]);
   const [loading,setLoading]=useState(true);
@@ -2988,6 +3007,16 @@ function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats }) {
   const photoInputRef=useRef<HTMLInputElement>(null);
   const editPhotoInputRef=useRef<HTMLInputElement>(null);
   const lightboxStartX=useRef(0);
+  const convertConsumed=useRef(false);
+
+  // 從「待整理」轉入：預先帶入國家與內容、打開新增表單
+  useEffect(()=>{
+    if(convertDraft){
+      setCountry(convertDraft.country);
+      setNewContent(convertDraft.content||"");
+      setAdding(true);
+    }
+  },[]);
 
   // 目前國家的類別（沒有自訂就用預設）
   const cats:string[] = (noteCatsByCountry?.[country]?.length) ? noteCatsByCountry[country] : DEFAULT_NOTE_CATS;
@@ -3030,6 +3059,7 @@ function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats }) {
     const payload={country, category:newCat||cats[0]||"其他", content:newContent.trim(), photos:newPhotos, sort_order:Date.now()};
     const {data,error}=await sb.from('country_notes').insert([payload]).select().single();
     if(!error&&data){ setNotes(ns=>[data,...ns]); }
+    if(convertDraft && onConverted && !convertConsumed.current){ convertConsumed.current=true; onConverted(convertDraft.inboxId); }
     setNewContent(""); setNewPhotos([]); setAdding(false);
     setSaving(false);
   }
@@ -3912,6 +3942,9 @@ export default function App() {
   const [selectedCountry,setSelectedCountry]=useState<string|null>(null);
   const [trips,setTrips]=useState<any[]>([]);
   const [inbox,setInbox]=useState<any[]>([]);
+  const [addInitial,setAddInitial]=useState<any>(null);
+  const [addConvertInboxId,setAddConvertInboxId]=useState<string|null>(null);
+  const [notesConvertDraft,setNotesConvertDraft]=useState<any>(null);
   const [selectedTripId,setSelectedTripId]=useState<string|null>(null);
   const [editingTrip,setEditingTrip]=useState<any>(null);
   const [showNextTrip,setShowNextTrip]=useState(true);
@@ -3967,6 +4000,25 @@ export default function App() {
       .then(({data,error})=>{ if(error){ console.warn('inbox_links 載入失敗（可能尚未建立資料表）:', error.message); return; } if(data) setInbox(data); });
   },[]);
 
+  // ── 捷徑（方向 A）：開啟 App 時若網址帶 ?inbox=1&country=..&url=..，自動丟進待整理 ──
+  const shortcutHandled=useRef(false);
+  useEffect(()=>{
+    if(shortcutHandled.current) return;
+    shortcutHandled.current=true;
+    try{
+      const sp=new URLSearchParams(window.location.search);
+      const url=sp.get('url');
+      if(sp.get('inbox') && url){
+        const country=sp.get('country')||countries[0]||'韓國';
+        const note=sp.get('note')||'';
+        sb.from('inbox_links').insert([{country,url,note}]).select().single()
+          .then(({data,error})=>{ if(!error&&data) setInbox(xs=>[data,...xs]); else if(error) alert('存入待整理失敗：'+(error.message||'請確認已建立 inbox_links 資料表')); });
+        setHistory(h=> h[h.length-1]==='inbox'? h : [...h,'inbox']);
+        try{ window.history.replaceState({},'',window.location.pathname); }catch(_){}
+      }
+    }catch(_){}
+  },[]);
+
   // ── 待整理：新增 / 刪除 ──
   async function handleAddInbox(country:string, url:string, note:string){
     const payload={ country, url, note:note||'' };
@@ -3977,6 +4029,21 @@ export default function App() {
   async function handleDeleteInbox(id:string){
     const {error}=await sb.from('inbox_links').delete().eq('id',id);
     if(!error) setInbox(xs=>xs.filter(x=>x.id!==id));
+  }
+  // 開新增頁（一般＋收藏）：清掉任何轉換帶入值
+  function openAddNew(){ setAddInitial(null); setAddConvertInboxId(null); setHistory(h=>[...h,"add"]); }
+  // 開備忘錄頁（一般）：清掉轉換草稿
+  function openNotes(){ setNotesConvertDraft(null); setHistory(h=>[...h,"notes"]); }
+  // 待整理 → 轉成收藏地點（帶入國家＋網址）
+  function convertInboxToPlace(it:any){
+    setAddInitial({ country: it.country||"", source_url: it.url });
+    setAddConvertInboxId(it.id);
+    setHistory(h=>[...h,"add"]);
+  }
+  // 待整理 → 轉成備忘錄（帶入國家＋內容）
+  function convertInboxToNote(it:any){
+    setNotesConvertDraft({ inboxId: it.id, country: it.country, content: (it.note? it.note+"\n":"") + it.url });
+    setHistory(h=>[...h,"notes"]);
   }
 
   // ── 儲存設定到 Supabase ──
@@ -4153,7 +4220,7 @@ export default function App() {
 
       {/* 底層：Home 永遠存在 */}
       <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",flexDirection:"column"}}>
-        <Home places={places} countries={countries} countryOrder={countryOrder} trips={trips} showNextTrip={showNextTrip} onNav={nav} onTrips={()=>setHistory(h=>[...h,"trips"])} onOpenTrip={openTrip} onCountry={c=>{setSelectedCountry(c);setHistory(h=>[...h,"country"]);}} inboxCount={inbox.length} />
+        <Home places={places} countries={countries} countryOrder={countryOrder} trips={trips} showNextTrip={showNextTrip} onNav={nav} onTrips={()=>setHistory(h=>[...h,"trips"])} onOpenTrip={openTrip} onCountry={c=>{setSelectedCountry(c);setHistory(h=>[...h,"country"]);}} inboxCount={inbox.length} onAddNew={openAddNew} onNotes={openNotes} />
       </div>
 
       {/* 上層頁面：疊在 Home 上面，右滑時往右移動 */}
@@ -4167,13 +4234,13 @@ export default function App() {
           WebkitOverflowScrolling:"touch",
           background:"#F5F0EB",
         }}>
-          {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} onAutoAddNb={autoAddNeighborhood} />}
+          {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} onAutoAddNb={autoAddNeighborhood} initial={addInitial} convertInboxId={addConvertInboxId} onConverted={(id:string)=>handleDeleteInbox(id)} />}
           {page==="country"&&<CountryPage country={selectedCountry!} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}}
             cityOrder={cityOrderByCountry[selectedCountry!]||[]}
             onUpdateCityOrder={async (country:string, list:string[])=>{ const next={...cityOrderByCountry,[country]:list}; setCityOrderByCountry(next); await saveSettings({city_order_by_country:next}); }} />}
           {page==="search"&&<Search places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
-          {page==="notes"&&<Notes onBack={goBack} countries={countries} noteCatsByCountry={noteCatsByCountry} onUpdateCats={async (country:string, list:string[])=>{ const next={...noteCatsByCountry,[country]:list}; setNoteCatsByCountry(next); await saveSettings({note_cats_by_country:next}); }} />}
-          {page==="inbox"&&<Inbox onBack={goBack} countries={countries} inbox={inbox} onAdd={handleAddInbox} onDelete={handleDeleteInbox} />}
+          {page==="notes"&&<Notes onBack={goBack} countries={countries} noteCatsByCountry={noteCatsByCountry} convertDraft={notesConvertDraft} onConverted={(id:string)=>handleDeleteInbox(id)} onUpdateCats={async (country:string, list:string[])=>{ const next={...noteCatsByCountry,[country]:list}; setNoteCatsByCountry(next); await saveSettings({note_cats_by_country:next}); }} />}
+          {page==="inbox"&&<Inbox onBack={goBack} countries={countries} inbox={inbox} onAdd={handleAddInbox} onDelete={handleDeleteInbox} onConvertPlace={convertInboxToPlace} onConvertNote={convertInboxToNote} />}
           {page==="trips"&&<Trips trips={trips} onBack={goBack} onOpen={openTrip} onNew={()=>{ setEditingTrip(null); setHistory(h=>[...h,"tripForm"]); }} />}
           {page==="tripForm"&&<TripForm initial={editingTrip} countries={countries} geoData={geoData} onBack={goBack} onSave={editingTrip?handleUpdateTrip:handleAddTrip} onDelete={editingTrip?handleDeleteTrip:undefined} />}
           {page==="tripDetail"&&(()=>{ const t=trips.find(x=>x.id===selectedTripId); return t?<TripDetail trip={t} places={places} onBack={goBack} onSaveDays={handleSaveTripDays} onEditTrip={(tr:any)=>{ setEditingTrip(tr); setHistory(h=>[...h,"tripForm"]); }} onOpenPlace={(p:any)=>{ setSelected(p); setHistory(h=>[...h,"detail"]); }} />:null; })()}
