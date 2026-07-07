@@ -2898,7 +2898,7 @@ function Inbox({ onBack, countries, inbox, onAdd, onDelete, onConvertPlace, onCo
             <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
               <div style={{width:34,height:34,borderRadius:9,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color:"#fff",background:src.bg}}>{src.icon}</div>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:14,color:"#007AFF",wordBreak:"break-all",lineHeight:1.45}}>{cleanDisplayUrl(it.url)}</div>
+                <a href={it.url} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:14,color:"#007AFF",wordBreak:"break-all",lineHeight:1.45,textDecoration:"none",display:"block"}}>{cleanDisplayUrl(it.url)}</a>
                 <div style={{fontSize:12,color:"#A69C90",marginTop:5}}>{src.label} · {timeAgo(it.created_at)}</div>
                 {it.note && <div style={{fontSize:13,color:"#5A5147",marginTop:6,lineHeight:1.5,wordBreak:"break-word"}}>{it.note}</div>}
               </div>
@@ -2917,7 +2917,6 @@ function Inbox({ onBack, countries, inbox, onAdd, onDelete, onConvertPlace, onCo
               <div style={{fontSize:13,color:"#007AFF",wordBreak:"break-all"}}>{cleanDisplayUrl(sheetItem.url)}</div>
               <div style={{fontSize:11.5,color:"#A69C90",marginTop:4}}>{sheetItem.note?sheetItem.note+" · ":""}{inboxSource(sheetItem.url).label} · {timeAgo(sheetItem.created_at)}</div>
             </div>
-            <a href={sheetItem.url} target="_blank" rel="noreferrer" onClick={()=>setSheetItem(null)} style={{display:"flex",alignItems:"center",gap:12,padding:"15px 16px",fontSize:16,color:"#000",textDecoration:"none",borderBottom:"1px solid #E2DBD2"}}><span style={{width:26,textAlign:"center",fontSize:17}}>🔗</span>開啟連結</a>
             <button onClick={()=>{ const it=sheetItem; setSheetItem(null); onConvertPlace(it); }} style={{display:"flex",alignItems:"center",gap:12,padding:"15px 16px",fontSize:16,color:"#000",background:"none",border:"none",borderBottom:"1px solid #E2DBD2",width:"100%",cursor:"pointer",textAlign:"left"}}><span style={{width:26,textAlign:"center",fontSize:17}}>📍</span>轉成收藏地點<span style={{fontSize:12,color:"#A69C90",marginLeft:"auto"}}>網址自動帶入</span></button>
             <button onClick={()=>{ const it=sheetItem; setSheetItem(null); onConvertNote(it); }} style={{display:"flex",alignItems:"center",gap:12,padding:"15px 16px",fontSize:16,color:"#000",background:"none",border:"none",borderBottom:"1px solid #E2DBD2",width:"100%",cursor:"pointer",textAlign:"left"}}><span style={{width:26,textAlign:"center",fontSize:17}}>📝</span>轉成備忘錄</button>
             <button onClick={()=>{ const id=sheetItem.id; if(window.confirm("確定要刪除這筆待整理連結嗎？")){ setSheetItem(null); onDelete(id); } }} style={{display:"flex",alignItems:"center",gap:12,padding:"15px 16px",fontSize:16,color:"#FF3B30",background:"none",border:"none",width:"100%",cursor:"pointer",textAlign:"left"}}><span style={{width:26,textAlign:"center",fontSize:17}}>🗑</span>刪除</button>
@@ -4007,14 +4006,19 @@ export default function App() {
     shortcutHandled.current=true;
     try{
       const sp=new URLSearchParams(window.location.search);
-      const url=sp.get('url');
-      if(sp.get('inbox') && url){
-        const country=sp.get('country')||countries[0]||'韓國';
-        const note=sp.get('note')||'';
-        sb.from('inbox_links').insert([{country,url,note}]).select().single()
-          .then(({data,error})=>{ if(!error&&data) setInbox(xs=>[data,...xs]); else if(error) alert('存入待整理失敗：'+(error.message||'請確認已建立 inbox_links 資料表')); });
-        setHistory(h=> h[h.length-1]==='inbox'? h : [...h,'inbox']);
-        try{ window.history.replaceState({},'',window.location.pathname); }catch(_){}
+      if(sp.get('inbox')){
+        const raw=window.location.search;
+        let mi=raw.indexOf('&url='); if(mi<0) mi=raw.indexOf('?url=');
+        let url = mi>=0 ? raw.slice(mi+5) : '';
+        if(url){ try{ url=decodeURIComponent(url); }catch(_){} }
+        if(url){
+          const country=sp.get('country')||countries[0]||'韓國';
+          const note=sp.get('note')||'';
+          sb.from('inbox_links').insert([{country,url,note}]).select().single()
+            .then(({data,error})=>{ if(!error&&data) setInbox(xs=>[data,...xs]); else if(error) alert('存入待整理失敗：'+(error.message||'請確認已建立 inbox_links 資料表')); });
+          setHistory(h=> h[h.length-1]==='inbox'? h : [...h,'inbox']);
+          try{ window.history.replaceState({},'',window.location.pathname); }catch(_){}
+        }
       }
     }catch(_){}
   },[]);
