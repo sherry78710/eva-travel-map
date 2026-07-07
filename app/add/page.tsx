@@ -2909,11 +2909,12 @@ function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats }) {
   const [dragY,setDragY]=useState(0);
   const dragStartY=useRef(0);
   const noteRefs=useRef<any>({});
-  function noteDStart(e:any, cat:string, id:string){ dragStartY.current=e.touches[0].clientY; setDragId(id); setDragCat(cat); setDragY(0); }
+  function noteDStart(e:any, cat:string, id:string){ e.preventDefault(); dragStartY.current=e.touches[0].clientY; setDragId(id); setDragCat(cat); setDragY(0); }
   function noteDMove(e:any){ if(!dragId||!dragCat) return; e.preventDefault(); setDragY(e.touches[0].clientY-dragStartY.current); }
   async function noteDEnd(e:any){
     if(!dragId||!dragCat){ return; }
-    const y=e.changedTouches[0].clientY;
+    const touch = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]);
+    const y = touch ? touch.clientY : (dragStartY.current + dragY);
     const arr=[...(grouped[dragCat]||[])];
     const from=arr.findIndex((n:any)=>n.id===dragId);
     if(from<0){ setDragId(null); setDragCat(null); setDragY(0); return; }
@@ -3051,7 +3052,7 @@ function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats }) {
                     <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                       <button onClick={()=>setEditingNote({...n,photos:n.photos||[]})} style={{background:"none",border:"none",color:"#007AFF",fontSize:13,cursor:"pointer",padding:0}}>編輯</button>
                       <button onClick={()=>handleDelete(n.id)} style={{background:"none",border:"none",color:"#C7C7CC",fontSize:18,cursor:"pointer",padding:0}}>×</button>
-                      <span onTouchStart={e=>noteDStart(e,cat,n.id)} onTouchMove={noteDMove} onTouchEnd={noteDEnd} style={{fontSize:17,color:"#C7C7CC",padding:"0 2px",touchAction:"none",cursor:"grab"}}>⠿</span>
+                      <span onTouchStart={e=>noteDStart(e,cat,n.id)} onTouchMove={noteDMove} onTouchEnd={noteDEnd} onTouchCancel={noteDEnd} style={{fontSize:17,color:"#C7C7CC",padding:"0 2px",touchAction:"none",cursor:"grab"}}>⠿</span>
                     </div>
                   </div>
                   {(n.photos||[]).length>0 && (
