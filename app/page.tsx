@@ -975,7 +975,7 @@ function GeoEditor({ countries, geoData, onUpdateGeo }) {
   );
 }
 
-function Settings({ countries, types, countryOrder, geoData, showNextTrip, onToggleNextTrip, onBack, onUpdateCountries, onUpdateTypes, onUpdateOrder, onUpdateGeo }) {
+function Settings({ countries, types, countryOrder, geoData, showNextTrip, onToggleNextTrip, onBack, onUpdateCountries, onUpdateTypes, onRenameType, onUpdateOrder, onUpdateGeo }) {
   const [tab, setTab] = useState("countries");
   const [expandedCountry, setExpandedCountry] = useState<string|null>(null);
   const [expandedCity, setExpandedCity] = useState<string|null>(null);
@@ -1209,7 +1209,7 @@ function Settings({ countries, types, countryOrder, geoData, showNextTrip, onTog
         {/* ── 類別 ── */}
         {tab==="types" && (
           <>
-            <div style={{ fontSize:12, color:"#8E8E93", marginBottom:8 }}>按住 ⠿ 拖拉調整順序</div>
+            <div style={{ fontSize:12, color:"#8E8E93", marginBottom:8 }}>按住 ⠿ 拖拉調整順序，點「改名」可修改名稱（會同步更新已套用的店家）</div>
             <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
               {types.map((t:string, i:number) => {
                 const isDraggingT = dragIdxT===i;
@@ -1221,6 +1221,7 @@ function Settings({ countries, types, countryOrder, geoData, showNextTrip, onTog
                 return (
                   <div key={t} style={{ display:"flex", alignItems:"center", padding:"14px 16px", borderBottom:i<types.length-1?"1px solid #EDE8E2":"none", background:isDraggingT?"#EEF4FF":"#FDF8F3", transform:isDraggingT?`translateY(${dragYT}px) scale(1.02)`:`translateY(${tyT}px)`, transition:isDraggingT?"none":"transform 0.2s ease", position:"relative", zIndex:isDraggingT?10:1, userSelect:"none" }}>
                     <span style={{ fontSize:15, color:"#000", flex:1 }}>{t}</span>
+                    <button onClick={()=>{ const nn=window.prompt("類別改名", t); if(nn!==null){ const v=nn.trim(); if(v && v!==t){ if(types.includes(v)){ alert("已有相同名稱的類別"); } else { onRenameType(t, v); } } } }} style={{ background:"none", border:"none", color:"#007AFF", fontSize:13, cursor:"pointer", padding:0, marginRight:14 }}>改名</button>
                     <span onTouchStart={e=>onTouchStartT(e,i)} onTouchMove={onTouchMoveT} onTouchEnd={onTouchEndT}
                       style={{ fontSize:18, color:"#C7C7CC", marginRight:14, padding:"0 6px", touchAction:"none" }}>⠿</span>
                     <button onClick={()=>onUpdateTypes(types.filter((x:string)=>x!==t))} style={{ background:"none", border:"none", color:"#FF3B30", fontSize:13, cursor:"pointer", padding:0 }}>刪除</button>
@@ -4060,6 +4061,20 @@ export default function App() {
     await saveSettings({types: newTypes});
   }
 
+  // 類別改名：同步更新用到此類別的所有店家
+  async function handleRenameType(oldName: string, newName: string){
+    const nn = (newName||"").trim();
+    if(!nn || nn===oldName || types.includes(nn)) return;
+    const newTypes = types.map(t=> t===oldName ? nn : t);
+    setTypes(newTypes);
+    await saveSettings({types: newTypes});
+    const affected = places.filter((p:any)=> Array.isArray(p.types) && p.types.includes(oldName));
+    if(affected.length){
+      setPlaces((ps:any[])=> ps.map((p:any)=> (Array.isArray(p.types)&&p.types.includes(oldName)) ? {...p, types: p.types.map((x:string)=> x===oldName? nn : x)} : p));
+      await Promise.all(affected.map((p:any)=> sb.from('places').update({ types: p.types.map((x:string)=> x===oldName? nn : x) }).eq('id', p.id)));
+    }
+  }
+
   async function handleUpdateOrder(newOrder: string[]){
     setCountryOrder(newOrder);
     await saveSettings({country_order: newOrder});
@@ -4248,7 +4263,7 @@ export default function App() {
           {page==="trips"&&<Trips trips={trips} onBack={goBack} onOpen={openTrip} onNew={()=>{ setEditingTrip(null); setHistory(h=>[...h,"tripForm"]); }} />}
           {page==="tripForm"&&<TripForm initial={editingTrip} countries={countries} geoData={geoData} onBack={goBack} onSave={editingTrip?handleUpdateTrip:handleAddTrip} onDelete={editingTrip?handleDeleteTrip:undefined} />}
           {page==="tripDetail"&&(()=>{ const t=trips.find(x=>x.id===selectedTripId); return t?<TripDetail trip={t} places={places} onBack={goBack} onSaveDays={handleSaveTripDays} onEditTrip={(tr:any)=>{ setEditingTrip(tr); setHistory(h=>[...h,"tripForm"]); }} onOpenPlace={(p:any)=>{ setSelected(p); setHistory(h=>[...h,"detail"]); }} />:null; })()}
-          {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} showNextTrip={showNextTrip} onToggleNextTrip={handleToggleNextTrip} onBack={goBack} onUpdateCountries={handleUpdateCountries} onUpdateTypes={handleUpdateTypes} onUpdateOrder={handleUpdateOrder} onUpdateGeo={handleUpdateGeo} />}
+          {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} showNextTrip={showNextTrip} onToggleNextTrip={handleToggleNextTrip} onBack={goBack} onUpdateCountries={handleUpdateCountries} onUpdateTypes={handleUpdateTypes} onRenameType={handleRenameType} onUpdateOrder={handleUpdateOrder} onUpdateGeo={handleUpdateGeo} />}
           {page==="detail"&&selected&&(
             <Detail place={selected} onBack={goBack} countries={countries} types={types} geoData={geoData} trips={trips} onAddToTrip={handleAddToTrip} onGoTrips={()=>setHistory(h=>[...h,"trips"])}
               onStatusChange={handleStatusChange} onEdit={handleEdit} onDelete={handleDelete} />
