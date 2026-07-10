@@ -1400,7 +1400,12 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(p);
   });
-  const groupedEntries = Object.entries(grouped).sort(([a],[b]) => (a as string).localeCompare(b as string, 'zh-TW'));
+  const groupedEntries = Object.entries(grouped).sort((ea:any, eb:any) => {
+    const a = ea[1][0]||{}, b = eb[1][0]||{};
+    const ka = `${a.city||""}|${a.district||""}|${a.neighborhood||""}`;
+    const kb = `${b.city||""}|${b.district||""}|${b.neighborhood||""}`;
+    return ka.localeCompare(kb, 'zh-TW');
+  });
 
   function toggleCollapse(nb:string) {
     setCollapsed((c:any) => ({ ...c, [nb]: !c[nb] }));
