@@ -1388,7 +1388,7 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
 
   const filtered = rows.filter((p:any) => {
     const lq = q.toLowerCase();
-    const mQ = !q.trim() || [p.name, p.neighborhood, p.note||"", p.review||"", ...(p.recommendations||[]), ...(p.types||[])].some((s:string) => s.toLowerCase().includes(lq));
+    const mQ = !q.trim() || [p.name, p.city, p.district, p.neighborhood, p.note||"", p.review||"", ...(p.recommendations||[]), ...(p.types||[])].some((s:string) => (s||"").toLowerCase().includes(lq));
     const mS = !filterStatus || p.status === filterStatus;
     const mC = !filterCity || filterCity === "全部" || p.city === filterCity;
     return mQ && mS && mC;
