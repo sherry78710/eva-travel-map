@@ -2478,6 +2478,9 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
   const [lightboxLocal, setLightboxLocal] = useState<{photos:string[],index:number}|null>(null);
   const [addTripOpen, setAddTripOpen] = useState(false);
   const [addedMsg, setAddedMsg] = useState("");
+  const [heroIndex, setHeroIndex] = useState(0);
+  const heroTouchX = useRef(0);
+  useEffect(()=>{ setHeroIndex(0); }, [place.id]);
   const searchName = (place.map_query && place.map_query.trim()) ? place.map_query.trim() : (place.name||"");
   const q = encodeURIComponent([searchName, place.address].map((s:string)=>(s||"").trim()).filter(Boolean).join(" "));
 
@@ -2599,23 +2602,52 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
           </>)}
         </div>
       )}
-      {/* 固定頂部 */}
+      {/* 固定頂部（返回／編輯，一律可點擊）*/}
       <div style={{ flexShrink:0, background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 12px)", paddingBottom:"12px", paddingLeft:"20px", paddingRight:"20px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
         <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0 }}>‹ 返回</button>
         <button onClick={()=>setEditing(true)} style={{ background:"none", border:"none", color:"#007AFF", fontSize:15, fontWeight:600, cursor:"pointer", padding:0 }}>編輯</button>
       </div>
       {/* 滾動區域 */}
-      <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"16px 20px 40px" }}>
-        <div style={{ marginBottom:16 }}>
-          <div style={{ fontSize:26, fontWeight:700, color:"#000", letterSpacing:-0.5, marginBottom:4 }}>{place.name}</div>
-          <div style={{ fontSize:13, color:"#8E8E93" }}>{[place.country,place.city,place.district,place.neighborhood].filter(Boolean).join(" · ")}</div>
-          {(place.status==="visited"||place.status==="favorite") && place.rating>0 && (
-            <div style={{ marginTop:6, display:"flex", alignItems:"center", gap:8 }}>
-              <span style={{ fontSize:18, color:"#FF2D55" }}>{"♥".repeat(place.rating)}{"♡".repeat(5-place.rating)}</span>
-              <span style={{ fontSize:12, color:"#8E8E93" }}>{["","不推","普通","還好","不錯","超推"][place.rating]}</span>
+      <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch" }}>
+        {/* 大圖輪播：有照片才顯示，可左右滑動、點擊放大；沒照片則退回純文字表頭 */}
+        {(place.photos||[]).length>0 ? (
+          <div style={{ position:"relative", width:"100%", aspectRatio:"4/3", overflow:"hidden", background:"#000" }}>
+            <div
+              onTouchStart={e=>{ heroTouchX.current = e.touches[0].clientX; }}
+              onTouchEnd={e=>{
+                const diff = e.changedTouches[0].clientX - heroTouchX.current;
+                if(diff>40) setHeroIndex(i=>Math.max(0,i-1));
+                else if(diff<-40) setHeroIndex(i=>Math.min((place.photos||[]).length-1,i+1));
+              }}
+              style={{ display:"flex", width:"100%", height:"100%", transform:`translateX(-${heroIndex*100}%)`, transition:"transform 0.3s ease" }}>
+              {place.photos.map((photo:string, i:number) => (
+                <div key={i} onClick={()=>setLightboxLocal({photos:place.photos, index:i})}
+                  style={{ flex:"0 0 100%", width:"100%", height:"100%", position:"relative", cursor:"pointer" }}>
+                  <img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
+                  <div style={{ position:"absolute", inset:0, background:"linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.55) 100%)" }} />
+                </div>
+              ))}
             </div>
-          )}
-        </div>
+            {place.photos.length>1 && (
+              <div style={{ position:"absolute", bottom:18, left:0, right:0, display:"flex", justifyContent:"center", gap:5 }}>
+                {place.photos.map((_:string, i:number) => (
+                  <div key={i} style={{ width:heroIndex===i?14:5, height:5, borderRadius:3, background:heroIndex===i?"#fff":"rgba(255,255,255,0.45)", transition:"all 0.2s" }} />
+                ))}
+              </div>
+            )}
+            <div style={{ position:"absolute", bottom:0, left:0, right:0, padding: place.photos.length>1 ? "36px 20px 18px" : "20px 20px 18px" }}>
+              <div style={{ fontSize:24, fontWeight:700, color:"#fff", lineHeight:1.25, letterSpacing:-0.3, textShadow:"0 2px 12px rgba(0,0,0,0.35)" }}>{place.name}</div>
+              <div style={{ marginTop:6, fontSize:13, color:"rgba(255,255,255,0.9)", fontWeight:500, textShadow:"0 1px 6px rgba(0,0,0,0.3)" }}>{[place.country,place.city,place.district,place.neighborhood].filter(Boolean).join(" · ")}</div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding:"16px 20px 0" }}>
+            <div style={{ fontSize:26, fontWeight:700, color:"#000", letterSpacing:-0.5, marginBottom:4 }}>{place.name}</div>
+            <div style={{ fontSize:13, color:"#8E8E93" }}>{[place.country,place.city,place.district,place.neighborhood].filter(Boolean).join(" · ")}</div>
+          </div>
+        )}
+
+        <div style={{ padding:"16px 20px 40px" }}>
 
         <div style={{ background:"#FDF8F3", borderRadius:16, padding:8, marginBottom:12, display:"flex", gap:6 }}>
           {Object.entries(STATUS_CFG).map(([k,s])=>(
@@ -2623,41 +2655,29 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
           ))}
         </div>
 
-        <button onClick={()=>setAddTripOpen(true)} style={{ width:"100%", background:"#FDF8F3", border:"1px solid #EDE8E2", borderRadius:14, padding:"13px 0", marginBottom:12, fontSize:14, fontWeight:600, color:"#000", cursor:"pointer" }}>＋ 加入旅程</button>
+        <button onClick={()=>setAddTripOpen(true)} style={{ width:"100%", background:"#fff", border:"1px solid #EDE8E2", borderRadius:14, padding:"13px 0", marginBottom:12, fontSize:14, fontWeight:600, color:"#000", cursor:"pointer" }}>＋ 加入旅程</button>
         {addedMsg && <div style={{ textAlign:"center", fontSize:12, color:"#0F6E56", marginTop:-6, marginBottom:12 }}>{addedMsg}</div>}
 
         {(place.status==="visited"||place.status==="favorite") && (
-          <div style={{ background:"#FDF8F3", borderRadius:16, padding:"16px", marginBottom:12 }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>去過評價</div>
-            <div style={{ display:"flex", gap:8, marginBottom: place.review ? 10 : 0 }}>
-              {[1,2,3,4,5].map(n => (
-                <button key={n} onClick={() => onEdit({...place, rating: place.rating===n?0:n})}
-                  style={{ fontSize:24, background:"none", border:"none", cursor:"pointer", padding:0, color:n<=(place.rating||0)?"#FF2D55":"#E5E5EA" }}>
-                  {n<=(place.rating||0)?"♥":"♡"}
-                </button>
-              ))}
-              {(place.rating||0)>0 && <span style={{ fontSize:12, color:"#8E8E93", alignSelf:"center", marginLeft:4 }}>{["","不推","普通","還好","不錯","超推"][place.rating]}</span>}
-            </div>
-            {place.review && <div style={{ fontSize:15, color:"#000", lineHeight:1.5 }}>{place.review}</div>}
-          </div>
+          <ViewReviewCard place={place} onEdit={onEdit} />
         )}
 
-        <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
+        <div style={{ background:"#fff", borderRadius:16, overflow:"hidden", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
           {place.types?.length>0 && <DRow label="類型" value={place.types.join("・")} />}
         </div>
 
-        {place.opening_hours && <div style={{ background:"#FDF8F3", borderRadius:16, padding:"14px 16px", marginBottom:12 }}>
+        {place.opening_hours && <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
           <div style={{ fontSize:11, color:"#8E8E93", marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>營業時間</div>
           <div style={{ fontSize:15, color:"#000", lineHeight:1.6, whiteSpace:"pre-line" }}>{place.opening_hours}</div>
         </div>}
 
-        {place.note && <div style={{ background:"#FDF8F3", borderRadius:16, padding:"14px 16px", marginBottom:12 }}>
+        {place.note && <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
           <div style={{ fontSize:11, color:"#8E8E93", marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>收藏原因 / 備註</div>
           <div style={{ fontSize:15, color:"#000", lineHeight:1.5 }}>{place.note}</div>
         </div>}
 
         {place.recommendations && (typeof place.recommendations === 'string' ? place.recommendations : (place.recommendations as string[]).join('\n')).trim().length>0 && (
-          <div style={{ background:"#FDF8F3", borderRadius:16, padding:"14px 16px", marginBottom:12 }}>
+          <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
             <div style={{ fontSize:13, color:"#8E8E93", marginBottom:8 }}>推薦品項</div>
             <div style={{ fontSize:15, color:"#000", lineHeight:1.7, whiteSpace:"pre-line" }}>
               {typeof place.recommendations === 'string' ? place.recommendations : (place.recommendations as string[]).join('\n')}
@@ -2666,7 +2686,7 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
         )}
 
         {place.source_url && (
-          <a href={place.source_url} target="_blank" rel="noreferrer" style={{ display:"block", background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12, textDecoration:"none" }}>
+          <a href={place.source_url} target="_blank" rel="noreferrer" style={{ display:"block", background:"#fff", borderRadius:16, overflow:"hidden", marginBottom:12, textDecoration:"none", boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
             <div style={{ display:"flex", alignItems:"stretch" }}>
               <div style={{ width:80, background:"linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, minHeight:70 }}>
                 <span style={{ fontSize:28 }}>
@@ -2688,7 +2708,7 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
 
         {/* Photos — view only, tap to enlarge */}
         {(place.photos||[]).length > 0 && (
-          <div style={{ background:"#FDF8F3", borderRadius:16, padding:"16px", marginBottom:12 }}>
+          <div style={{ background:"#fff", borderRadius:16, padding:"16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>照片</div>
             <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:2 }}>
               {(place.photos||[]).map((photo, i) => (
@@ -2707,7 +2727,7 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
           const locQ = encodeURIComponent([locSearchName, loc.address].map((s:string)=>(s||"").trim()).filter(Boolean).join(" "));
           const hasMultiple = branchLocations(place).length > 1;
           return (
-            <div key={i} style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
+            <div key={i} style={{ background:"#fff", borderRadius:16, overflow:"hidden", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px" }}>
                 <div>
                   <div style={{ fontSize:11, color:"#8E8E93", marginBottom:3, textTransform:"uppercase", letterSpacing:0.5 }}>
@@ -2748,6 +2768,7 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
             </div>
           );
         })}
+        </div>
       </div>
       {addTripOpen && (
         <AddToTripSheet trips={trips} place={place}
@@ -2760,6 +2781,34 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
             setTimeout(()=>setAddedMsg(""), 2500);
           }} />
       )}
+    </div>
+  );
+}
+
+// ── 去過評價卡片（檢視頁用）：愛心可直接點評分，心得可直接輸入，不用進編輯頁 ──────────
+function ViewReviewCard({ place, onEdit }) {
+  const [draft, setDraft] = useState(place.review || "");
+  useEffect(() => { setDraft(place.review || ""); }, [place.id]);
+  return (
+    <div style={{ background:"#fff", borderRadius:16, padding:"16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
+      <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>去過評價</div>
+      <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+        {[1,2,3,4,5].map(n => (
+          <button key={n} onClick={() => onEdit({...place, rating: place.rating===n?0:n})}
+            style={{ fontSize:24, background:"none", border:"none", cursor:"pointer", padding:0, color:n<=(place.rating||0)?"#FF2D55":"#E5E5EA" }}>
+            {n<=(place.rating||0)?"♥":"♡"}
+          </button>
+        ))}
+        {(place.rating||0)>0 && <span style={{ fontSize:12, color:"#8E8E93", alignSelf:"center", marginLeft:4 }}>{["","不推","普通","還好","不錯","超推"][place.rating]}</span>}
+      </div>
+      <textarea
+        value={draft}
+        onChange={e=>setDraft(e.target.value)}
+        onBlur={()=>{ if(draft !== (place.review||"")) onEdit({...place, review: draft}); }}
+        placeholder="點這裡輸入你的心得..."
+        rows={2}
+        style={{ width:"100%", border:"none", outline:"none", fontSize:14.5, color:"#000", background:"#F5F0EB", borderRadius:10, padding:"10px 12px", fontFamily:"inherit", resize:"none", lineHeight:1.6, boxSizing:"border-box" }}
+      />
     </div>
   );
 }
