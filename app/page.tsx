@@ -2472,6 +2472,8 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
 }
 
 // ── Detail ────────────────────────────────────────────────────────────────────
+function touchDist(a:any, b:any){ return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); }
+
 function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, types, geoData, trips, onAddToTrip, onGoTrips }) {
   const [editing, setEditing] = useState(false);
   const [f, setF] = useState({...place});
@@ -2479,8 +2481,20 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
   const [addTripOpen, setAddTripOpen] = useState(false);
   const [addedMsg, setAddedMsg] = useState("");
   const [heroIndex, setHeroIndex] = useState(0);
+  const [heroDragOffset, setHeroDragOffset] = useState(0);
   const heroTouchX = useRef(0);
+  const heroRef = useRef<HTMLDivElement>(null);
+  const heroDragging = useRef(false);
+  const heroWasDragged = useRef(false);
   useEffect(()=>{ setHeroIndex(0); }, [place.id]);
+  // Lightbox 手勢：滑動切換照片 + 雙指縮放 + 雙擊縮放 + 縮放後拖曳平移
+  const [lbScale, setLbScale] = useState(1);
+  const [lbPos, setLbPos] = useState({x:0,y:0});
+  const lbPinch = useRef<{d0:number, scale0:number}|null>(null);
+  const lbPanStart = useRef<{x:number,y:number}|null>(null);
+  const lbSwipeX = useRef(0);
+  const lbLastTap = useRef(0);
+  useEffect(()=>{ setLbScale(1); setLbPos({x:0,y:0}); }, [lightboxLocal?.index, !!lightboxLocal]);
   const searchName = (place.map_query && place.map_query.trim()) ? place.map_query.trim() : (place.name||"");
   const q = encodeURIComponent([searchName, place.address].map((s:string)=>(s||"").trim()).filter(Boolean).join(" "));
 
@@ -2585,16 +2599,55 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
 
   return (
     <div style={{ display:"flex", flexDirection:"column", width:"100%", height:"100%", background:"#F5F0EB" }}>
-      {/* Lightbox */}
+      {/* Lightbox：可左右滑動切換、雙指或雙擊放大、放大後可拖曳平移 */}
       {lightboxLocal && (
-        <div onClick={()=>setLightboxLocal(null)}
-          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" }}>
-          <img src={lightboxLocal.photos[lightboxLocal.index]} alt=""
-            style={{ maxWidth:"100%", maxHeight:"100%", objectFit:"contain" }}
+        <div
+          onClick={()=>{ if(lbScale===1) setLightboxLocal(null); }}
+          onTouchStart={e=>{
+            if(e.touches.length===2){
+              lbPinch.current = { d0: touchDist(e.touches[0], e.touches[1]), scale0: lbScale };
+            } else if(e.touches.length===1){
+              if(lbScale>1){
+                lbPanStart.current = { x: e.touches[0].clientX - lbPos.x, y: e.touches[0].clientY - lbPos.y };
+              } else {
+                lbSwipeX.current = e.touches[0].clientX;
+              }
+              const now = Date.now();
+              if(now - lbLastTap.current < 300){
+                if(lbScale > 1){ setLbScale(1); setLbPos({x:0,y:0}); }
+                else { setLbScale(2.5); }
+              }
+              lbLastTap.current = now;
+            }
+          }}
+          onTouchMove={e=>{
+            if(e.touches.length===2 && lbPinch.current){
+              const d = touchDist(e.touches[0], e.touches[1]);
+              setLbScale(Math.min(4, Math.max(1, lbPinch.current.scale0 * (d / lbPinch.current.d0))));
+            } else if(e.touches.length===1 && lbScale>1 && lbPanStart.current){
+              setLbPos({ x: e.touches[0].clientX - lbPanStart.current.x, y: e.touches[0].clientY - lbPanStart.current.y });
+            }
+          }}
+          onTouchEnd={e=>{
+            if(lbScale<=1){
+              const dx = e.changedTouches[0].clientX - lbSwipeX.current;
+              if(Math.abs(dx) > 50){
+                if(dx<0) setLightboxLocal(l=>l?{...l,index:(l.index+1)%l.photos.length}:null);
+                else setLightboxLocal(l=>l?{...l,index:(l.index-1+l.photos.length)%l.photos.length}:null);
+              }
+            }
+            if(lbScale < 1) setLbScale(1);
+            lbPinch.current = null; lbPanStart.current = null;
+          }}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden", touchAction:"none" }}>
+          <img src={lightboxLocal.photos[lightboxLocal.index]} alt="" draggable={false}
+            style={{ maxWidth:"100%", maxHeight:"100%", objectFit:"contain",
+              transform:`translate(${lbPos.x}px, ${lbPos.y}px) scale(${lbScale})`,
+              transition: (lbPinch.current || lbPanStart.current) ? "none" : "transform 0.2s ease" }}
             onClick={e=>e.stopPropagation()} />
           <button onClick={()=>setLightboxLocal(null)}
             style={{ position:"absolute", top:20, right:20, background:"none", border:"none", color:"white", fontSize:28, cursor:"pointer", lineHeight:1 }}>✕</button>
-          {lightboxLocal.photos.length > 1 && (<>
+          {lightboxLocal.photos.length > 1 && lbScale===1 && (<>
             <button onClick={e=>{e.stopPropagation();setLightboxLocal(l=>l?{...l,index:(l.index-1+l.photos.length)%l.photos.length}:null)}}
               style={{ position:"absolute", left:16, background:"rgba(255,255,255,0.2)", border:"none", borderRadius:"50%", width:40, height:40, color:"white", fontSize:22, cursor:"pointer" }}>‹</button>
             <button onClick={e=>{e.stopPropagation();setLightboxLocal(l=>l?{...l,index:(l.index+1)%l.photos.length}:null)}}
@@ -2613,58 +2666,76 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
         {(place.photos||[]).length>0 ? (
           <div style={{ position:"relative", width:"100%", aspectRatio:"4/3", overflow:"hidden", background:"#000" }}>
             <div
-              onTouchStart={e=>{ heroTouchX.current = e.touches[0].clientX; }}
+              onTouchStart={e=>{ heroTouchX.current = e.touches[0].clientX; heroDragging.current = true; setHeroDragOffset(0); }}
+              onTouchMove={e=>{
+                if(!heroDragging.current) return;
+                setHeroDragOffset(e.touches[0].clientX - heroTouchX.current);
+              }}
               onTouchEnd={e=>{
                 const diff = e.changedTouches[0].clientX - heroTouchX.current;
-                if(diff>40) setHeroIndex(i=>Math.max(0,i-1));
-                else if(diff<-40) setHeroIndex(i=>Math.min((place.photos||[]).length-1,i+1));
+                const width = heroRef.current?.offsetWidth || 300;
+                heroDragging.current = false;
+                heroWasDragged.current = Math.abs(diff) > 8;
+                if(diff < -width*0.15) setHeroIndex(i=>Math.min((place.photos||[]).length-1,i+1));
+                else if(diff > width*0.15) setHeroIndex(i=>Math.max(0,i-1));
+                setHeroDragOffset(0);
               }}
-              style={{ display:"flex", width:"100%", height:"100%", transform:`translateX(-${heroIndex*100}%)`, transition:"transform 0.3s ease" }}>
+              ref={heroRef}
+              style={{ display:"flex", width:"100%", height:"100%", touchAction:"pan-y",
+                transform:`translateX(calc(-${heroIndex*100}% + ${heroDragOffset}px))`,
+                transition: heroDragging.current ? "none" : "transform 0.3s ease" }}>
               {place.photos.map((photo:string, i:number) => (
-                <div key={i} onClick={()=>setLightboxLocal({photos:place.photos, index:i})}
+                <div key={i}
+                  onClick={()=>{ if(heroWasDragged.current){ heroWasDragged.current=false; return; } setLightboxLocal({photos:place.photos, index:i}); }}
                   style={{ flex:"0 0 100%", width:"100%", height:"100%", position:"relative", cursor:"pointer" }}>
-                  <img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
+                  <img src={photo} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", pointerEvents:"none" }} />
                   <div style={{ position:"absolute", inset:0, background:"linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.55) 100%)" }} />
                 </div>
               ))}
             </div>
             {place.photos.length>1 && (
-              <div style={{ position:"absolute", bottom:18, left:0, right:0, display:"flex", justifyContent:"center", gap:5 }}>
+              <div style={{ position:"absolute", bottom:18, left:0, right:0, display:"flex", justifyContent:"center", gap:5, pointerEvents:"none" }}>
                 {place.photos.map((_:string, i:number) => (
                   <div key={i} style={{ width:heroIndex===i?14:5, height:5, borderRadius:3, background:heroIndex===i?"#fff":"rgba(255,255,255,0.45)", transition:"all 0.2s" }} />
                 ))}
               </div>
             )}
-            <div style={{ position:"absolute", bottom:0, left:0, right:0, padding: place.photos.length>1 ? "36px 20px 18px" : "20px 20px 18px" }}>
+            <div style={{ position:"absolute", bottom:0, left:0, right:0, padding: place.photos.length>1 ? "36px 20px 18px" : "20px 20px 18px", pointerEvents:"none" }}>
               <div style={{ fontSize:24, fontWeight:700, color:"#fff", lineHeight:1.25, letterSpacing:-0.3, textShadow:"0 2px 12px rgba(0,0,0,0.35)" }}>{place.name}</div>
-              <div style={{ marginTop:6, fontSize:13, color:"rgba(255,255,255,0.9)", fontWeight:500, textShadow:"0 1px 6px rgba(0,0,0,0.3)" }}>{[place.country,place.city,place.district,place.neighborhood].filter(Boolean).join(" · ")}</div>
+              <div style={{ marginTop:6, display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontSize:13, color:"rgba(255,255,255,0.9)", fontWeight:500, textShadow:"0 1px 6px rgba(0,0,0,0.3)" }}>{[place.country,place.city,place.district,place.neighborhood].filter(Boolean).join(" · ")}</span>
+                {place.types?.length>0 && <span style={{ flexShrink:0, whiteSpace:"nowrap", fontSize:11, fontWeight:700, color:"#fff", background:"rgba(255,255,255,0.22)", backdropFilter:"blur(6px)", padding:"3px 9px", borderRadius:20, letterSpacing:0.3 }}>{place.types.join("・")}</span>}
+              </div>
             </div>
           </div>
         ) : (
           <div style={{ padding:"16px 20px 0" }}>
             <div style={{ fontSize:26, fontWeight:700, color:"#000", letterSpacing:-0.5, marginBottom:4 }}>{place.name}</div>
-            <div style={{ fontSize:13, color:"#8E8E93" }}>{[place.country,place.city,place.district,place.neighborhood].filter(Boolean).join(" · ")}</div>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontSize:13, color:"#8E8E93" }}>{[place.country,place.city,place.district,place.neighborhood].filter(Boolean).join(" · ")}</span>
+              {place.types?.length>0 && <span style={{ flexShrink:0, whiteSpace:"nowrap", fontSize:11, fontWeight:700, color:"#6b655c", background:"#EDE6DB", padding:"3px 9px", borderRadius:20, letterSpacing:0.3 }}>{place.types.join("・")}</span>}
+            </div>
           </div>
         )}
 
         <div style={{ padding:"16px 20px 40px" }}>
 
-        <div style={{ background:"#FDF8F3", borderRadius:16, padding:8, marginBottom:12, display:"flex", gap:6 }}>
-          {Object.entries(STATUS_CFG).map(([k,s])=>(
-            <button key={k} onClick={()=>onStatusChange(place.id,k)} style={{ flex:1, padding:"10px 0", borderRadius:12, border:"none", background:place.status===k?"#000":"none", color:place.status===k?"white":"#8E8E93", fontSize:13, fontWeight:place.status===k?700:400, cursor:"pointer", transition:"all 0.15s" }}>{s.mark} {s.label}</button>
-          ))}
+        <div style={{ display:"flex", alignItems:"stretch", gap:8, marginBottom:12 }}>
+          <div style={{ background:"#FDF8F3", borderRadius:16, padding:8, display:"flex", gap:6, flex:1 }}>
+            {Object.entries(STATUS_CFG).map(([k,s])=>(
+              <button key={k} onClick={()=>onStatusChange(place.id,k)} style={{ flex:1, padding:"10px 0", borderRadius:12, border:"none", background:place.status===k?"#000":"none", color:place.status===k?"white":"#8E8E93", fontSize:13, fontWeight:place.status===k?700:400, cursor:"pointer", transition:"all 0.15s" }}>{s.mark} {s.label}</button>
+            ))}
+          </div>
+          <button onClick={()=>setAddTripOpen(true)} title="加入旅程" style={{ width:56, flexShrink:0, background:"#fff", border:"1px solid #EDE8E2", borderRadius:16, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:1, cursor:"pointer" }}>
+            <span style={{ fontSize:17, fontWeight:700, color:"#000", lineHeight:1 }}>＋</span>
+            <span style={{ fontSize:10, fontWeight:600, color:"#8E8E93", lineHeight:1 }}>行程</span>
+          </button>
         </div>
-
-        <button onClick={()=>setAddTripOpen(true)} style={{ width:"100%", background:"#fff", border:"1px solid #EDE8E2", borderRadius:14, padding:"13px 0", marginBottom:12, fontSize:14, fontWeight:600, color:"#000", cursor:"pointer" }}>＋ 加入旅程</button>
         {addedMsg && <div style={{ textAlign:"center", fontSize:12, color:"#0F6E56", marginTop:-6, marginBottom:12 }}>{addedMsg}</div>}
 
         {(place.status==="visited"||place.status==="favorite") && (
           <ViewReviewCard place={place} onEdit={onEdit} />
         )}
-
-        <div style={{ background:"#fff", borderRadius:16, overflow:"hidden", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
-          {place.types?.length>0 && <DRow label="類型" value={place.types.join("・")} />}
-        </div>
 
         {place.opening_hours && <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
           <div style={{ fontSize:11, color:"#8E8E93", marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>營業時間</div>
@@ -2788,7 +2859,14 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
 // ── 去過評價卡片（檢視頁用）：愛心可直接點評分，心得可直接輸入，不用進編輯頁 ──────────
 function ViewReviewCard({ place, onEdit }) {
   const [draft, setDraft] = useState(place.review || "");
+  const taRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { setDraft(place.review || ""); }, [place.id]);
+  useEffect(() => {
+    if(taRef.current){
+      taRef.current.style.height = "auto";
+      taRef.current.style.height = taRef.current.scrollHeight + "px";
+    }
+  }, [draft]);
   return (
     <div style={{ background:"#fff", borderRadius:16, padding:"16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
       <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>去過評價</div>
@@ -2802,12 +2880,13 @@ function ViewReviewCard({ place, onEdit }) {
         {(place.rating||0)>0 && <span style={{ fontSize:12, color:"#8E8E93", alignSelf:"center", marginLeft:4 }}>{["","不推","普通","還好","不錯","超推"][place.rating]}</span>}
       </div>
       <textarea
+        ref={taRef}
         value={draft}
         onChange={e=>setDraft(e.target.value)}
         onBlur={()=>{ if(draft !== (place.review||"")) onEdit({...place, review: draft}); }}
         placeholder="點這裡輸入你的心得..."
-        rows={2}
-        style={{ width:"100%", border:"none", outline:"none", fontSize:14.5, color:"#000", background:"#F5F0EB", borderRadius:10, padding:"10px 12px", fontFamily:"inherit", resize:"none", lineHeight:1.6, boxSizing:"border-box" }}
+        rows={1}
+        style={{ width:"100%", border:"none", outline:"none", fontSize:14.5, color:"#000", background:"#F5F0EB", borderRadius:10, padding:"10px 12px", fontFamily:"inherit", resize:"none", lineHeight:1.6, boxSizing:"border-box", minHeight:40, overflow:"hidden", display:"block" }}
       />
     </div>
   );
