@@ -975,7 +975,7 @@ function GeoEditor({ countries, geoData, onUpdateGeo }) {
   );
 }
 
-function Settings({ countries, types, countryOrder, geoData, showNextTrip, onToggleNextTrip, onBack, onUpdateCountries, onUpdateTypes, onRenameType, onUpdateOrder, onUpdateGeo }) {
+function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCountries, onUpdateTypes, onRenameType, onUpdateOrder, onUpdateGeo }) {
   const [tab, setTab] = useState("countries");
   const [expandedCountry, setExpandedCountry] = useState<string|null>(null);
   const [expandedCity, setExpandedCity] = useState<string|null>(null);
@@ -1092,17 +1092,6 @@ function Settings({ countries, types, countryOrder, geoData, showNextTrip, onTog
       </div>
 
       <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"16px 20px 40px" }}>
-        <div style={{ fontSize:11, color:"#8E8E93", letterSpacing:0.5, textTransform:"uppercase", marginBottom:8, paddingLeft:2 }}>顯示</div>
-        <div style={{ background:"#FDF8F3", borderRadius:16, padding:"14px 16px", marginBottom:8, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <div>
-            <div style={{ fontSize:15, color:"#000" }}>在首頁顯示下一趟行程</div>
-            <div style={{ fontSize:12, color:"#8E8E93", marginTop:2 }}>關閉後首頁只保留「行程」按鈕</div>
-          </div>
-          <button onClick={()=>onToggleNextTrip(!showNextTrip)} style={{ width:50, height:30, borderRadius:15, border:"none", cursor:"pointer", background:showNextTrip?"#34C759":"#E5E5EA", position:"relative", flexShrink:0, transition:"background 0.2s" }}>
-            <span style={{ position:"absolute", top:3, left:showNextTrip?23:3, width:24, height:24, borderRadius:"50%", background:"#fff", boxShadow:"0 1px 3px rgba(0,0,0,0.3)", transition:"left 0.2s" }} />
-          </button>
-        </div>
-        <div style={{ height:1, background:"#EDE8E2", margin:"16px 0" }} />
         {/* ── 國家與商圈 ── */}
         {tab==="countries" && (
           <>
@@ -3574,7 +3563,7 @@ function sortItemsByTime(items:any[]):any[]{
 }
 
 // ── 我的行程列表 ──────────────────────────────────────────────────────────────
-function Trips({ trips, onBack, onOpen, onNew }:any){
+function Trips({ trips, onBack, onOpen, onNew, showNextTrip, onToggleNextTrip }:any){
   const today=tripTodayStr();
   const sorted=[...(trips||[])].sort((a:any,b:any)=>(a.start_date||'').localeCompare(b.start_date||''));
   const upcoming=sorted.filter((t:any)=>(t.end_date||t.start_date||'')>=today);
@@ -3601,6 +3590,12 @@ function Trips({ trips, onBack, onOpen, onNew }:any){
         <button onClick={onNew} style={{ background:'none', border:'none', color:'#000', fontSize:26, lineHeight:1, cursor:'pointer', padding:0, width:40, textAlign:'right' }}>+</button>
       </div>
       <div style={{ padding:16 }}>
+        <div style={{ background:'#fff', borderRadius:16, padding:'14px 16px', marginBottom:14, boxShadow:'0 1px 2px rgba(28,27,25,0.05)', border:'1px solid rgba(28,27,25,0.05)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <div style={{ fontSize:14, color:'#000', fontWeight:500 }}>首頁顯示下一趟行程</div>
+          <button onClick={()=>onToggleNextTrip(!showNextTrip)} style={{ width:44, height:26, borderRadius:13, border:'none', cursor:'pointer', background:showNextTrip?'#1C1B19':'#E5E2DC', position:'relative', flexShrink:0, transition:'background 0.2s' }}>
+            <span style={{ position:'absolute', top:3, left:showNextTrip?21:3, width:20, height:20, borderRadius:'50%', background:'#fff', boxShadow:'0 1px 3px rgba(0,0,0,0.25)', transition:'left 0.2s' }} />
+          </button>
+        </div>
         {sorted.length===0 && (
           <div style={{ padding:'56px 24px', textAlign:'center', display:'flex', flexDirection:'column', alignItems:'center' }}>
             <div style={{ width:56, height:56, borderRadius:'50%', background:'#EDE8E2', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:14, fontSize:26 }}>🧳</div>
@@ -4393,10 +4388,10 @@ export default function App() {
           {page==="search"&&<Search places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}} />}
           {page==="notes"&&<Notes onBack={goBack} countries={countries} noteCatsByCountry={noteCatsByCountry} convertDraft={notesConvertDraft} onConverted={(id:string)=>handleDeleteInbox(id)} onUpdateCats={async (country:string, list:string[])=>{ const next={...noteCatsByCountry,[country]:list}; setNoteCatsByCountry(next); await saveSettings({note_cats_by_country:next}); }} />}
           {page==="inbox"&&<Inbox onBack={goBack} countries={countries} inbox={inbox} onAdd={handleAddInbox} onDelete={handleDeleteInbox} onConvertPlace={convertInboxToPlace} onConvertNote={convertInboxToNote} />}
-          {page==="trips"&&<Trips trips={trips} onBack={goBack} onOpen={openTrip} onNew={()=>{ setEditingTrip(null); setHistory(h=>[...h,"tripForm"]); }} />}
+          {page==="trips"&&<Trips trips={trips} onBack={goBack} onOpen={openTrip} onNew={()=>{ setEditingTrip(null); setHistory(h=>[...h,"tripForm"]); }} showNextTrip={showNextTrip} onToggleNextTrip={handleToggleNextTrip} />}
           {page==="tripForm"&&<TripForm initial={editingTrip} countries={countries} geoData={geoData} onBack={goBack} onSave={editingTrip?handleUpdateTrip:handleAddTrip} onDelete={editingTrip?handleDeleteTrip:undefined} />}
           {page==="tripDetail"&&(()=>{ const t=trips.find(x=>x.id===selectedTripId); return t?<TripDetail trip={t} places={places} onBack={goBack} onSaveDays={handleSaveTripDays} onEditTrip={(tr:any)=>{ setEditingTrip(tr); setHistory(h=>[...h,"tripForm"]); }} onOpenPlace={(p:any)=>{ setSelected(p); setHistory(h=>[...h,"detail"]); }} />:null; })()}
-          {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} showNextTrip={showNextTrip} onToggleNextTrip={handleToggleNextTrip} onBack={goBack} onUpdateCountries={handleUpdateCountries} onUpdateTypes={handleUpdateTypes} onRenameType={handleRenameType} onUpdateOrder={handleUpdateOrder} onUpdateGeo={handleUpdateGeo} />}
+          {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} onBack={goBack} onUpdateCountries={handleUpdateCountries} onUpdateTypes={handleUpdateTypes} onRenameType={handleRenameType} onUpdateOrder={handleUpdateOrder} onUpdateGeo={handleUpdateGeo} />}
           {page==="detail"&&selected&&(
             <Detail place={selected} onBack={goBack} countries={countries} types={types} geoData={geoData} trips={trips} onAddToTrip={handleAddToTrip} onGoTrips={()=>setHistory(h=>[...h,"trips"])}
               onStatusChange={handleStatusChange} onEdit={handleEdit} onDelete={handleDelete} />
