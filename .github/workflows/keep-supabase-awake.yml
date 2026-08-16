@@ -1,0 +1,17 @@
+name: Keep Supabase Awake
+
+on:
+  schedule:
+    - cron: '0 6 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase
+        run: |
+          curl -s -o /dev/null -w "status: %{http_code}\n" \
+            "https://rbjpfcwirqpgpdrnfcwh.supabase.co/rest/v1/user_settings?select=id&limit=1" \
+            -H "apikey: 你的_ANON_KEY" \
+            -H "Authorization: Bearer 你的_ANON_KEY"
