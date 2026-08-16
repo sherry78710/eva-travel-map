@@ -13,5 +13,5 @@ jobs:
         run: |
           curl -s -o /dev/null -w "status: %{http_code}\n" \
             "https://rbjpfcwirqpgpdrnfcwh.supabase.co/rest/v1/user_settings?select=id&limit=1" \
-            -H "apikey: 你的_ANON_KEY" \
-            -H "Authorization: Bearer 你的_ANON_KEY"
+            -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJianBmY3dpcnFwZ3Bkcm5mY3doIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyODkwNTcsImV4cCI6MjA5Nzg2NTA1N30._DvXPF66D5iiKp30mon3hqXX3o41ibzPC9qFo_45r-w" \
+            -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJianBmY3dpcnFwZ3Bkcm5mY3doIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyODkwNTcsImV4cCI6MjA5Nzg2NTA1N30._DvXPF66D5iiKp30mon3hqXX3o41ibzPC9qFo_45r-w"
