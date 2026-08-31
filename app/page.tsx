@@ -610,7 +610,7 @@ const COUNTRY_FLAGS = {
 const INIT_TYPES = ["餐廳","咖啡廳","景點","市場","百貨","購物","酒吧","住宿","其他"];
 
 const PLACES_INIT = [
-  { id:"1", name:"麵首爾 Myeon Seoul", country:"韓國", city:"首爾", district:"江南區", neighborhood:"狎鷗亭", types:["餐廳"], status:"favorite", note:"金度潤開的", recommendations:["招牌麵"], address:"首爾市江南區狎鷗亭", source_url:"", rating:5, review:"湯頭清爽，麵條彈牙，舒服又莫名好吃", photos:[] },
+  { id:"1", name:"麵首爾 Myeon Seoul", country:"韓國", city:"首爾", district:"江南區", neighborhood:"狎鷗亭", types:["餐廳"], status:"visited", favorite:true, note:"金度潤開的", recommendations:["招牌麵"], address:"首爾市江南區狎鷗亭", source_url:"", rating:5, review:"湯頭清爽，麵條彈牙，舒服又莫名好吃", photos:[] },
   { id:"2", name:"Cafe Layered", country:"韓國", city:"首爾", district:"麻浦區", neighborhood:"望遠洞", types:["咖啡廳"], status:"visited", note:"已去過，超好吃", recommendations:["草莓千層"], address:"", source_url:"", rating:4, review:"草莓千層超好吃，空間也很舒服", photos:[] },
   { id:"3", name:"望遠市場", country:"韓國", city:"首爾", district:"麻浦區", neighborhood:"望遠洞", types:["市場"], status:"wishlist", note:"七月水蜜桃季節", recommendations:["水蜜桃","醬蟹"], address:"", source_url:"", rating:0, review:"", photos:[] },
   { id:"4", name:"道頓堀", country:"日本", city:"大阪", district:"中央區", neighborhood:"道頓堀", types:["景點","餐廳"], status:"visited", note:"晚上最美", recommendations:["章魚燒"], address:"", source_url:"", rating:4, review:"晚上的霓虹燈超美，章魚燒好吃", photos:[] },
@@ -621,8 +621,8 @@ const PLACES_INIT = [
 const STATUS_CFG = {
   wishlist: { label:"想去", mark:"○", iconBg:"#EDE8E2", iconColor:"#3C3C43" },
   visited:  { label:"去過", mark:"●", iconBg:"#3C3C43", iconColor:"#FFF" },
-  favorite: { label:"最愛", mark:"♡", iconBg:"#1C1C1E", iconColor:"#FFF" },
 };
+const FAVORITE_CFG = { label:"最愛", markOn:"♥", markOff:"♡" };
 
 function getCities(country) { return Object.keys(GEO[country] || {}); }
 function getDistricts(country, city) { return Object.keys((GEO[country] || {})[city] || {}); }
@@ -1378,7 +1378,7 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
   const filtered = rows.filter((p:any) => {
     const lq = q.toLowerCase();
     const mQ = !q.trim() || [p.name, p.city, p.district, p.neighborhood, p.note||"", p.review||"", ...(p.recommendations||[]), ...(p.types||[])].some((s:string) => (s||"").toLowerCase().includes(lq));
-    const mS = !filterStatus || p.status === filterStatus;
+    const mS = !filterStatus || (filterStatus === "favorite" ? !!p.favorite : p.status === filterStatus);
     const mC = !filterCity || filterCity === "全部" || p.city === filterCity;
     return mQ && mS && mC;
   });
@@ -1430,6 +1430,17 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
               </button>
             );
           })}
+          {(() => {
+            const count = list.filter((p:any)=>p.favorite).length;
+            const active = filterStatus === "favorite";
+            return (
+              <button onClick={()=>setFilterStatus(active?"":"favorite")}
+                style={{ flex:1, background:active?"#3C3C3C":"#F5F0EB", borderRadius:12, padding:"10px 0", textAlign:"center", border:"none", cursor:"pointer" }}>
+                <div style={{ fontSize:20, fontWeight:700, color:active?"white":"#000", lineHeight:1 }}>{count}</div>
+                <div style={{ fontSize:10, color:active?"rgba(255,255,255,0.7)":"#8E8E93", marginTop:3 }}>{FAVORITE_CFG.markOn} {FAVORITE_CFG.label}</div>
+              </button>
+            );
+          })()}
         </div>
         {/* 搜尋 */}
         <div style={{ display:"flex", alignItems:"center", gap:10, background:"#F5F0EB", borderRadius:12, padding:"10px 14px", marginBottom:10 }}>
@@ -2463,7 +2474,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
 // ── Detail ────────────────────────────────────────────────────────────────────
 function touchDist(a:any, b:any){ return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); }
 
-function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, types, geoData, trips, onAddToTrip, onGoTrips }) {
+function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onEdit, countries, types, geoData, trips, onAddToTrip, onGoTrips }) {
   const [editing, setEditing] = useState(false);
   const [f, setF] = useState({...place});
   const [lightboxLocal, setLightboxLocal] = useState<{photos:string[],index:number}|null>(null);
@@ -2715,6 +2726,10 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
               <button key={k} onClick={()=>onStatusChange(place.id,k)} style={{ flex:1, padding:"10px 0", borderRadius:12, border:"none", background:place.status===k?"#000":"none", color:place.status===k?"white":"#8E8E93", fontSize:13, fontWeight:place.status===k?700:400, cursor:"pointer", transition:"all 0.15s" }}>{s.mark} {s.label}</button>
             ))}
           </div>
+          <button onClick={()=>onFavoriteToggle(place.id, !place.favorite)} title="最愛" style={{ width:56, flexShrink:0, background:place.favorite?"#1C1C1E":"#fff", border:"1px solid #EDE8E2", borderRadius:16, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:1, cursor:"pointer", transition:"all 0.15s" }}>
+            <span style={{ fontSize:17, lineHeight:1, color:place.favorite?"#fff":"#000" }}>{place.favorite?FAVORITE_CFG.markOn:FAVORITE_CFG.markOff}</span>
+            <span style={{ fontSize:10, fontWeight:600, color:place.favorite?"rgba(255,255,255,0.75)":"#8E8E93", lineHeight:1 }}>最愛</span>
+          </button>
           <button onClick={()=>setAddTripOpen(true)} title="加入旅程" style={{ width:56, flexShrink:0, background:"#fff", border:"1px solid #EDE8E2", borderRadius:16, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:1, cursor:"pointer" }}>
             <span style={{ fontSize:17, fontWeight:700, color:"#000", lineHeight:1 }}>＋</span>
             <span style={{ fontSize:10, fontWeight:600, color:"#8E8E93", lineHeight:1 }}>行程</span>
@@ -2722,7 +2737,7 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
         </div>
         {addedMsg && <div style={{ textAlign:"center", fontSize:12, color:"#0F6E56", marginTop:-6, marginBottom:12 }}>{addedMsg}</div>}
 
-        {(place.status==="visited"||place.status==="favorite") && (
+        {(place.status==="visited"||place.favorite) && (
           <ViewReviewCard place={place} onEdit={onEdit} />
         )}
 
@@ -2893,7 +2908,7 @@ function DRow({ label, value }) {
 // ── Search ────────────────────────────────────────────────────────────────────
 function Search({ places, onBack, onSelect }) {
   const [q,setQ]=useState(""); const [fS,setFS]=useState(""); const [fT,setFT]=useState("");
-  const filtered=places.filter(p=>{ const lq=q.toLowerCase(); const mQ=!q||[p.name,p.neighborhood,p.district,p.city,p.country,p.note||"",...(p.types||[]),...(p.recommendations||[])].filter(Boolean).some((s:any)=>String(s).toLowerCase().includes(lq)); return mQ&&(!fS||p.status===fS)&&(!fT||p.types?.includes(fT)); });
+  const filtered=places.filter(p=>{ const lq=q.toLowerCase(); const mQ=!q||[p.name,p.neighborhood,p.district,p.city,p.country,p.note||"",...(p.types||[]),...(p.recommendations||[])].filter(Boolean).some((s:any)=>String(s).toLowerCase().includes(lq)); const mS=!fS||(fS==="favorite"?!!p.favorite:p.status===fS); return mQ&&mS&&(!fT||p.types?.includes(fT)); });
   return (
     <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
       <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 12px)", paddingBottom:"12px", paddingLeft:"16px", paddingRight:"16px" }}>
@@ -2906,6 +2921,7 @@ function Search({ places, onBack, onSelect }) {
           {Object.entries(STATUS_CFG).map(([k,s])=>(
             <button key={k} onClick={()=>setFS(fS===k?"":k)} style={{ flexShrink:0, padding:"6px 14px", borderRadius:20, border:"none", background:fS===k?"#000":"#EDE8E2", color:fS===k?"white":"#3C3C43", fontSize:13, cursor:"pointer" }}>{s.mark} {s.label}</button>
           ))}
+          <button onClick={()=>setFS(fS==="favorite"?"":"favorite")} style={{ flexShrink:0, padding:"6px 14px", borderRadius:20, border:"none", background:fS==="favorite"?"#000":"#EDE8E2", color:fS==="favorite"?"white":"#3C3C43", fontSize:13, cursor:"pointer" }}>{FAVORITE_CFG.markOn} {FAVORITE_CFG.label}</button>
           {["餐廳","咖啡廳","景點","市場"].map(t=>(
             <button key={t} onClick={()=>setFT(fT===t?"":t)} style={{ flexShrink:0, padding:"6px 14px", borderRadius:20, border:"none", background:fT===t?"#000":"#EDE8E2", color:fT===t?"white":"#3C3C43", fontSize:13, cursor:"pointer" }}>{t}</button>
           ))}
@@ -4287,7 +4303,7 @@ export default function App() {
     const payload = {
       name:p.name, country:p.country, city:p.city||'',
       district:p.district||'', neighborhood:p.neighborhood||'',
-      types:p.types||[], status:'wishlist',
+      types:p.types||[], status:'wishlist', favorite:false,
       note:p.note||'', address:p.address||'', opening_hours:p.opening_hours||'',
       recommendations: (typeof p.recommendations === 'string' ? p.recommendations.split('\n') : (p.recommendations||[])).map((s:string)=>s.trim()).filter(Boolean),
       source_url:p.source_url||'',
@@ -4306,6 +4322,13 @@ export default function App() {
     setSelected((prev:any)=>({...prev,status:s}));
   }
 
+  // ── 切換最愛（跟想去/去過獨立，可並存）──
+  async function handleFavoriteToggle(id:string,fav:boolean){
+    await sb.from('places').update({favorite:fav}).eq('id',id);
+    setPlaces(ps=>ps.map(p=>p.id===id?{...p,favorite:fav}:p));
+    setSelected((prev:any)=>({...prev,favorite:fav}));
+  }
+
   // ── 編輯 ──
   async function handleEdit(u:any){
     const {error}=await sb.from('places').update({
@@ -4314,7 +4337,7 @@ export default function App() {
       types:u.types||[], note:u.note||'', address:u.address||'', opening_hours:u.opening_hours||'',
       recommendations: (typeof u.recommendations === 'string' ? u.recommendations.split('\n') : (u.recommendations||[])).map((s:string)=>s.trim()).filter(Boolean), source_url:u.source_url||'',
       rating:u.rating||0, review:u.review||'', photos:u.photos||[],
-      status:u.status, summary:u.map_query||'', tags:u.tags||[],
+      status:u.status, favorite:u.favorite||false, summary:u.map_query||'', tags:u.tags||[],
       branches:u.branches||[],
     }).eq('id',u.id);
     if(!error){ setPlaces(ps=>ps.map(p=>p.id===u.id?u:p)); setSelected(u); }
@@ -4394,7 +4417,7 @@ export default function App() {
           {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} onBack={goBack} onUpdateCountries={handleUpdateCountries} onUpdateTypes={handleUpdateTypes} onRenameType={handleRenameType} onUpdateOrder={handleUpdateOrder} onUpdateGeo={handleUpdateGeo} />}
           {page==="detail"&&selected&&(
             <Detail place={selected} onBack={goBack} countries={countries} types={types} geoData={geoData} trips={trips} onAddToTrip={handleAddToTrip} onGoTrips={()=>setHistory(h=>[...h,"trips"])}
-              onStatusChange={handleStatusChange} onEdit={handleEdit} onDelete={handleDelete} />
+              onStatusChange={handleStatusChange} onFavoriteToggle={handleFavoriteToggle} onEdit={handleEdit} onDelete={handleDelete} />
           )}
         </div>
       )}
