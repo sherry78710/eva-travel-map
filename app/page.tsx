@@ -2653,7 +2653,7 @@ function Detail({ place, onBack, onStatusChange, onDelete, onEdit, countries, ty
       <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch" }}>
         {/* 大圖輪播：有照片才顯示，可左右滑動、點擊放大；沒照片則退回純文字表頭 */}
         {(place.photos||[]).length>0 ? (
-          <div style={{ position:"relative", width:"100%", aspectRatio:"4/3", overflow:"hidden", background:"#000" }}>
+          <div style={{ position:"relative", width:"100%", aspectRatio:"1/1", overflow:"hidden", background:"#000" }}>
             <div
               onTouchStart={e=>{ heroTouchX.current = e.touches[0].clientX; heroDragging.current = true; setHeroDragOffset(0); }}
               onTouchMove={e=>{
