@@ -1358,6 +1358,7 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
   const [filterCity, setFilterCity] = useState("");
   const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
   const [showCityOrder, setShowCityOrder] = useState(false);
+  const [sortMode, setSortMode] = useState<'default'|'ratingDesc'|'ratingAsc'>('default');
 
   const list = (places||[]).filter((p:any) => p.country === country);
 
@@ -1389,6 +1390,14 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(p);
   });
+  if (sortMode === 'ratingDesc' || sortMode === 'ratingAsc') {
+    Object.keys(grouped).forEach(key => {
+      grouped[key] = [...grouped[key]].sort((a:any,b:any) => {
+        const diff = (b.rating||0) - (a.rating||0);
+        return sortMode === 'ratingDesc' ? diff : -diff;
+      });
+    });
+  }
   const groupedEntries = Object.entries(grouped).sort((ea:any, eb:any) => {
     const a = ea[1][0]||{}, b = eb[1][0]||{};
     const ka = `${a.city||""}|${a.district||""}|${a.neighborhood||""}`;
@@ -1463,8 +1472,8 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
             })}
           </div>
           <div style={{ display:"flex", gap:4, flexShrink:0 }}>
-            {baseCities.length > 1 && (
-              <button onClick={()=>setShowCityOrder(true)} style={{ width:28, height:28, borderRadius:8, background:"#EDE8E2", border:"none", cursor:"pointer", fontSize:14, color:"#8E8E93", display:"flex", alignItems:"center", justifyContent:"center" }}>⇅</button>
+            {(
+              <button onClick={()=>setShowCityOrder(true)} style={{ width:28, height:28, borderRadius:8, background:sortMode!=='default'?"#3C3C3C":"#EDE8E2", border:"none", cursor:"pointer", fontSize:14, color:sortMode!=='default'?"#fff":"#8E8E93", display:"flex", alignItems:"center", justifyContent:"center" }}>⇅</button>
             )}
             <button onClick={()=>setViewMode('list')} style={{ background:viewMode==='list'?"#3C3C3C":"none", border:"none", borderRadius:6, padding:"4px 7px", cursor:"pointer", display:"flex", alignItems:"center", gap:1.5, flexDirection:"column" }}>
               {[0,1,2].map(i=><div key={i} style={{ width:12, height:2, background:viewMode==='list'?"white":"#8E8E93", borderRadius:1 }} />)}
@@ -1479,6 +1488,7 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
       {showCityOrder && (
         <CityOrderManager country={country} cities={baseCities}
           counts={Object.fromEntries(baseCities.map((c:string)=>[c, rows.filter((r:any)=>r.city===c).length]))}
+          sortMode={sortMode} onChangeSortMode={setSortMode}
           onClose={()=>setShowCityOrder(false)}
           onChange={(list:string[])=>onUpdateCityOrder(country, list)} />
       )}
@@ -3438,13 +3448,14 @@ function CatManager({ country, cats, grouped, onClose, onChange }:any){
   );
 }
 
-function CityOrderManager({ country, cities, counts, onClose, onChange }:any){
+function CityOrderManager({ country, cities, counts, sortMode, onChangeSortMode, onClose, onChange }:any){
   const [list,setList]=useState<string[]>(cities);
   const [dragIdx,setDragIdx]=useState<number|null>(null);
   const [overIdx,setOverIdx]=useState<number|null>(null);
   const [dragY,setDragY]=useState(0);
   const startY=useRef(0);
   const ITEM_H=52;
+  const SORT_OPTS=[{k:'default',label:'預設順序'},{k:'ratingDesc',label:'評分高到低'},{k:'ratingAsc',label:'評分低到高'}];
   function commit(next:string[]){ setList(next); onChange(next); }
   function dStart(e:any,i:number){ e.preventDefault(); startY.current=e.touches[0].clientY; setDragIdx(i); setOverIdx(i); setDragY(0); }
   function dMove(e:any){ if(dragIdx===null) return; e.preventDefault(); const dy=e.touches[0].clientY-startY.current; setDragY(dy); setOverIdx(Math.max(0,Math.min(list.length-1,dragIdx+Math.round(dy/ITEM_H)))); }
@@ -3454,10 +3465,24 @@ function CityOrderManager({ country, cities, counts, onClose, onChange }:any){
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",background:"#F5F0EB",borderTopLeftRadius:20,borderTopRightRadius:20,maxHeight:"82vh",overflowY:"auto",paddingBottom:"calc(env(safe-area-inset-bottom) + 20px)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 18px 10px"}}>
           <div style={{width:44}} />
-          <div style={{fontSize:16,fontWeight:600}}>{country} 城市順序</div>
+          <div style={{fontSize:16,fontWeight:600}}>{country} 排序方式</div>
           <button onClick={onClose} style={{background:"none",border:"none",color:"#007AFF",fontSize:16,fontWeight:600,cursor:"pointer",padding:0}}>完成</button>
         </div>
+
         <div style={{padding:"4px 18px 0"}}>
+          <div style={{fontSize:11,color:"#8E8E93",fontWeight:600,margin:"6px 2px"}}>排序方式</div>
+          <div style={{background:"#FDF8F3",borderRadius:14,overflow:"hidden",marginBottom:18}}>
+            {SORT_OPTS.map((o,i)=>(
+              <button key={o.k} onClick={()=>onChangeSortMode(o.k)} style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 14px", background:"none", border:"none", borderBottom:i<SORT_OPTS.length-1?"1px solid #EDE8E2":"none", cursor:"pointer", textAlign:"left" }}>
+                <span style={{fontSize:14,color:"#000"}}>{o.label}</span>
+                {sortMode===o.k && <span style={{color:"#3C3C43",fontSize:14}}>✓</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{padding:"4px 18px 0"}}>
+          <div style={{fontSize:11,color:"#8E8E93",fontWeight:600,margin:"6px 2px"}}>城市順序</div>
           <div style={{fontSize:12,color:"#8E8E93",marginBottom:10}}>按住 ⠿ 拖拉排序，之後新地點都會照這個順序顯示。</div>
           <div style={{background:"#FDF8F3",borderRadius:14,overflow:"hidden"}}>
             {list.map((c,i)=>{
