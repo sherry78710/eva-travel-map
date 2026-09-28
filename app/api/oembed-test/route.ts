@@ -37,7 +37,13 @@ async function tryPage(target: string) {
         html.match(new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+property=["']${key}["']`, 'i'));
       if (m) og[key] = m[1].slice(0, 500);
     }
-    return { label: 'page-html', status: res.status, og, htmlLength: html.length };
+    const keywords = ['video_url', 'video_versions', 'playback_url', '.mp4'];
+    const hits: Record<string, any> = {};
+    for (const kw of keywords) {
+      const idx = html.indexOf(kw);
+      hits[kw] = idx === -1 ? '找不到' : html.slice(Math.max(0, idx - 60), idx + 200);
+    }
+    return { label: 'page-html', status: res.status, og, htmlLength: html.length, keywordCheck: hits };
   } catch (e: any) {
     return { label: 'page-html', error: String(e?.message || e) };
   }
