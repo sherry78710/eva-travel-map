@@ -31,7 +31,7 @@ async function tryPage(target: string) {
     const res = await fetch(target, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
     const html = await res.text();
     const og: Record<string, string> = {};
-    for (const key of ['og:title', 'og:description', 'og:image']) {
+    for (const key of ['og:title', 'og:description', 'og:image', 'og:video', 'og:video:url', 'og:video:secure_url', 'og:video:type']) {
       const m =
         html.match(new RegExp(`<meta[^>]+property=["']${key}["'][^>]+content=["']([^"']*)["']`, 'i')) ||
         html.match(new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+property=["']${key}["']`, 'i'));
