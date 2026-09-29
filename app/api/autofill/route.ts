@@ -115,7 +115,8 @@ async function askClaude(post: { title: string; desc: string }, ctx: any) {
  "types": ["只能從 types 清單挑，0 到 2 個"],
  "recommendations": ["貼文裡提到的品項，有價格就寫在後面，例：鹽麵包 ₩3,500"],
  "recommendations_web": ["網路上常被推薦、但貼文沒提到的必點，最多 4 項，不要跟上面重複"],
- "note": "一句 20 字內的繁體中文收藏原因，根據貼文內容寫"
+ "note": "一句 20 字內的繁體中文收藏原因，根據貼文內容寫",
+ "confidence": "high 或 low。只有貼文文字明確寫出店名或地址時才填 high；店名是你根據菜色、地區等線索上網推測出來的，一律填 low"
 }
 所有說明文字用繁體中文。查不到就照貼文內容填，不要編造。`;
   const user = `countries: ${JSON.stringify(ctx.countries)}
@@ -168,6 +169,17 @@ async function searchGoogle(query: string, country: string) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
+
+  // 重新搜尋：使用者改好店名後只查 Google，不讀貼文、不跑 AI
+  if (typeof body.query === 'string') {
+    const q = body.query.trim().slice(0, 100);
+    if (!q) return NextResponse.json({ error: '請先填地點名稱' }, { status: 400 });
+    const r = await bump('search', LIMIT_SEARCH);
+    if (r !== 'ok') return NextResponse.json({ error: r === 'limit' ? '今日 Google 搜尋次數已用完，明天再試' : r }, { status: r === 'limit' ? 429 : 500 });
+    const candidates = await searchGoogle(q, body.country || '');
+    return NextResponse.json({ candidates });
+  }
+
   const url = String(body.url || '').trim();
   let host = '';
   try { host = new URL(url).hostname.toLowerCase(); } catch {}
