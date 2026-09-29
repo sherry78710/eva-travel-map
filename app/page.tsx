@@ -2350,6 +2350,8 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
   const [cands,setCands] = useState<any[]>([]);
   const [candIdx,setCandIdx] = useState(0);
   const [candBusy,setCandBusy] = useState(false);
+  const [guess,setGuess] = useState(false);
+  const [reBusy,setReBusy] = useState(false);
   const lastUrl = useRef("");
   const fRef = useRef<any>(f); fRef.current = f;
 
@@ -2390,7 +2392,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       else if(x.country===fl.country && !x.city && fl.city){ n.city=fl.city; }
       setF(n); fRef.current=n;
       setAutoKeys(ks=>Array.from(new Set([...ks, ...filled])));
-      setCands(d.candidates||[]);
+      setCands(d.candidates||[]); setGuess(fl.confidence==='low');
       if(fl.is_place===false) setAf({status:'done', msg:'這則貼文看起來不像在介紹店家，已先填入能抓到的內容'});
       else if(d.searchNote) setAf({status:'done', msg:d.searchNote});
       else if(!(d.candidates||[]).length) setAf({status:'done', msg:'Google 地圖找不到這間店，地址請手動填寫'});
@@ -2402,6 +2404,22 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
 
   // 從待整理或捷徑帶連結進來：一打開就自動填寫
   useEffect(()=>{ if(SOCIAL_RE.test(f.source_url||'') && !f.name.trim()) runAutofill(f.source_url); },[]);
+
+  async function reSearch(){
+    const name = (fRef.current.name||'').trim();
+    if(!name || reBusy) return;
+    setReBusy(true);
+    try{
+      const q = [name, fRef.current.city].filter(Boolean).join(' ');
+      const res = await fetch('/api/autofill', { method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ query:q, country: fRef.current.country||'' }) });
+      let d:any = {}; try{ d = await res.json(); }catch(_){}
+      if(!res.ok || d.error){ setAf({status:'error', msg:(d.error||'搜尋失敗')+`（代碼 ${res.status}）`}); return; }
+      setCands(d.candidates||[]); setCandIdx(0); setGuess(false);
+      setAf({status:'done', msg:(d.candidates||[]).length ? '' : 'Google 地圖找不到這個名稱，可以換個寫法再試'});
+    }catch(_){ setAf({status:'error', msg:'搜尋失敗，請確認網路'}); }
+    finally{ setReBusy(false); }
+  }
 
   async function useCandidate(c:any){
     if(candBusy) return;
@@ -2518,12 +2536,24 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
         {/* Google 找到的店：確認後才填入地址與營業時間 */}
         {cand && (
           <div style={{ background:"#fff", borderRadius:16, padding:"12px 16px", marginBottom:12, border:"1px solid rgba(28,27,25,0.08)" }}>
+            {guess && (
+              <div style={{ background:"#FFF4DB", color:"#8A5A00", fontSize:13, borderRadius:10, padding:"8px 10px", marginBottom:10, lineHeight:1.5 }}>
+                貼文沒寫店名，這是 AI 推測的，請先看地圖確認
+              </div>
+            )}
             <div style={{ fontSize:12, color:"#8E8E93", marginBottom:4 }}>Google 地圖找到{cands.length>1?`（${candIdx+1}/${cands.length}）`:''}</div>
-            <div style={{ fontSize:15, fontWeight:600, color:"#000" }}>{cand.name}</div>
-            <div style={{ fontSize:13, color:"#6b655c", marginTop:2, marginBottom:6 }}>{cand.address}</div>
-            <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cand.name)}&query_place_id=${cand.id}`} target="_blank" rel="noreferrer"
-              style={{ display:"inline-block", fontSize:13, color:"#007AFF", textDecoration:"none", marginBottom:10 }}>在地圖上看 ↗</a>
-            <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:15, fontWeight:600, color:"#000" }}>{cand.name}</div>
+                <div style={{ fontSize:13, color:"#6b655c", marginTop:2 }}>{cand.address}</div>
+              </div>
+              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cand.name)}&query_place_id=${cand.id}`} target="_blank" rel="noreferrer" aria-label="在 Google 地圖查看"
+                style={{ width:44, height:44, borderRadius:12, border:"1px solid rgba(28,27,25,0.15)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", textDecoration:"none", flexShrink:0, color:"#007AFF", background:"#fff" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#EA4335"/><circle cx="12" cy="9" r="2.5" fill="white"/></svg>
+                <span style={{ fontSize:10, marginTop:1 }}>地圖</span>
+              </a>
+            </div>
+            <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:12 }}>
               <button onClick={()=>useCandidate(cand)} disabled={candBusy}
                 style={{ padding:"6px 14px", borderRadius:10, border:"none", background:"#3C3C3C", color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>{candBusy?"填入中…":"用這間"}</button>
               {candIdx < cands.length-1
@@ -2537,6 +2567,12 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
           <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
             <div style={lbl}>地點名稱{isAuto('name')&&<AutoTag/>}</div>
             <input value={f.name} onChange={e=>set("name",e.target.value)} placeholder="" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
+            {f.name.trim() && af.status!=='loading' && (
+              <button onClick={reSearch} disabled={reBusy}
+                style={{ marginTop:8, background:"none", border:"none", padding:0, color:"#007AFF", fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                {reBusy ? "搜尋中…" : "🔍 用這個名稱重新找 Google 地圖"}
+              </button>
+            )}
           </div>
           <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
             <div style={lbl}>地圖搜尋名稱 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 當地語言・選填</span>{isAuto('map_query')&&<AutoTag/>}</div>
