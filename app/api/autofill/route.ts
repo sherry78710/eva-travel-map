@@ -86,6 +86,27 @@ function collectImages(html: string, og: string) {
   return list;
 }
 
+// 官方嵌入頁（給其他網站嵌入貼文用，不用登入）通常放的是原始照片，不是預覽卡
+const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
+async function embedImages(url: string, finalUrl: string) {
+  const pages: string[] = [];
+  const ig = url.match(/instagram\.com\/(?:[^/?#]+\/)?(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i);
+  if (ig) pages.push(`https://www.instagram.com/p/${ig[1]}/embed/captioned/`);
+  const th = (finalUrl || '').match(/threads\.(?:com|net)\/(@[^/?#]+)\/post\/([A-Za-z0-9_-]+)/i) || url.match(/threads\.(?:com|net)\/(@[^/?#]+)\/post\/([A-Za-z0-9_-]+)/i);
+  if (th) pages.push(`https://www.threads.com/${th[1]}/post/${th[2]}/embed`);
+  pages.push(finalUrl || url);
+  for (const page of pages) {
+    try {
+      const res = await fetch(page, { headers: { 'User-Agent': BROWSER_UA, 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8' }, cache: 'no-store', redirect: 'follow', signal: AbortSignal.timeout(10000) });
+      const html = await res.text();
+      const list = collectImages(html, '').filter(Boolean);
+      console.log('embed try', JSON.stringify({ page: page.replace(/^https:\/\/www\./, '').slice(0, 70), status: res.status, found: list.length }));
+      if (list.length) return list;
+    } catch (e) { console.error('embed try failed', page, e); }
+  }
+  return [];
+}
+
 // 從轉址頁找出真正的貼文網址（Threads 分享短連結常用 JS 或 meta 轉址）
 function findRedirect(html: string, base: string) {
   const pats = [
@@ -123,7 +144,7 @@ async function readPost(url: string) {
         console.log('readPost', JSON.stringify({ ua: headers['User-Agent']?.slice(0, 20) || 'default', status: res.status, final: res.url, titleLen: title.length, descLen: desc.length, hasImg: !!og }));
         // Threads 有時只有標題、沒有內文
         const text = desc || (isThreads && title && !/^threads$/i.test(title.trim()) ? title : '');
-        if (!looksBlocked(title, text, og)) return { title, desc: text, images: collectImages(html, og) };
+        if (!looksBlocked(title, text, og)) return { title, desc: text, images: collectImages(html, og), og, final: readOg(html, 'og:url') || res.url || target };
         // 拿不到內容：可能是轉址頁，找真正的網址再試
         const next = findRedirect(html, res.url || target);
         if (!next || next === target) break;
@@ -252,7 +273,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `讀不到這則 ${site} 貼文，可能暫時被擋住，等幾分鐘再按重試；私人帳號的貼文也讀不到` }, { status: 422 });
   }
 
-  const images = (await Promise.all((post.images || []).map(saveCover))).filter(Boolean);
+  // 貼文頁只拿到預覽卡時，改去嵌入頁找原始照片
+  let picked: string[] = post.images || [];
+  if (!picked.length || (picked.length === 1 && picked[0] === post.og)) {
+    const better = await embedImages(url, post.final || '');
+    if (better.length) picked = better;
+  }
+  console.log('cover final:', picked.length && picked[0] !== post.og ? `embed/html (${picked.length})` : 'og:image');
+  const images = (await Promise.all(picked.map(saveCover))).filter(Boolean);
   const cover = images[0] || '';
 
   const rAi = await bump('ai', LIMIT_AI);
