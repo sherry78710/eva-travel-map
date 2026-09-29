@@ -2360,7 +2360,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
   async function runAutofill(url:string){
     if(!SOCIAL_RE.test(url) || lastUrl.current===url) return;
     lastUrl.current=url;
-    setAf({status:'loading', msg:'讀取貼文、整理資料中…'});
+    setAf({status:'loading', msg:'讀取貼文、上網查資料中…約需 20 秒'});
     setCands([]); setCandIdx(0);
     try{
       const geo = geoDataProp||GEO;
@@ -2382,7 +2382,9 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       put('name', fl.name);
       put('map_query', fl.map_query);
       put('note', fl.note);
-      put('recommendations', Array.isArray(fl.recommendations) ? fl.recommendations.join('\n') : fl.recommendations);
+      const recPost = (Array.isArray(fl.recommendations) ? fl.recommendations : [fl.recommendations]).filter(Boolean);
+      const recWeb = (Array.isArray(fl.recommendations_web) ? fl.recommendations_web : []).filter(Boolean).map((r:string)=>`${r}（網路推薦）`);
+      put('recommendations', [...recPost, ...recWeb].join('\n'));
       put('types', (fl.types||[]).filter((t:string)=>types.includes(t)));
       if(!x.country && countries.includes(fl.country)){ n.country=fl.country; if(fl.city) n.city=fl.city; }
       else if(x.country===fl.country && !x.city && fl.city){ n.city=fl.city; }

@@ -3,24 +3,34 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
-export const maxDuration = 45;
+export const maxDuration = 60;
 
+export const dynamic = 'force-dynamic';
+
+// 關閉 Next.js 的請求快取，每次都真的去 Supabase 計數
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+  { global: { fetch: (input: any, init?: any) => fetch(input, { ...init, cache: 'no-store' }) } }
 );
+
+// 回傳 'ok' / 'limit' / 錯誤訊息
+async function bump(kind: string, limit: number, n = 1): Promise<string> {
+  const { data, error } = await sb.rpc('bump_usage', { p_kind: kind, p_limit: limit, p_n: n });
+  if (error) { console.error('bump_usage error', kind, error); return '計數功能出錯：' + (error.message || JSON.stringify(error)); }
+  return data === true ? 'ok' : 'limit';
+}
+function bumpFail(r: string, what: string) {
+  return r === 'limit'
+    ? NextResponse.json({ error: `今日${what}次數已用完，明天再試` }, { status: 429 })
+    : NextResponse.json({ error: r }, { status: 500 });
+}
 
 // 每日上限（台灣時間每天 0 點重置）
 const LIMIT_AI = 30;
 const LIMIT_SEARCH = 50;
 
 const ALLOWED = ['instagram.com', 'www.instagram.com', 'threads.com', 'www.threads.com', 'threads.net', 'www.threads.net'];
-
-async function bump(kind: string, limit: number, n = 1) {
-  const { data, error } = await sb.rpc('bump_usage', { p_kind: kind, p_limit: limit, p_n: n });
-  if (error) { console.error('bump_usage error', error); return false; }
-  return data === true;
-}
 
 function decodeEntities(s: string) {
   return s
@@ -90,20 +100,24 @@ function langFor(country: string) {
 async function askClaude(post: { title: string; desc: string }, ctx: any) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error('缺少 ANTHROPIC_API_KEY');
-  const system = `你是旅遊美食收藏助理。使用者給你一則 IG 或 Threads 貼文，請抽出貼文介紹的「一間」店家資料（有多間時取最主要那間）。
-只回傳一個 JSON 物件，不要任何其他文字、不要 Markdown。欄位：
+  const system = `你是旅遊美食收藏助理。使用者給你一則 IG 或 Threads 貼文，請找出貼文介紹的「一間」店家（有多間時取最主要那間）。
+步驟：
+1. 先讀貼文，推測店名、城市。
+2. 一定要用 web_search 上網搜尋（例如「店名 城市」），確認正式店名、分店、所在地區，並找出網路上常被推薦的必點品項。貼文資訊很少時，用貼文裡的線索（暱稱、菜色、地區）去找出真正的店。
+3. 最後只輸出一個 JSON 物件，不要任何其他文字、不要 Markdown：
 {
- "is_place": true/false（貼文是否在介紹實體店家或景點）,
- "name": "店名，照貼文常用寫法，可中外文並列",
+ "is_place": true/false（是否在介紹實體店家或景點）,
+ "name": "店名，用正式名稱，可中外文並列",
  "map_query": "店名的當地語言寫法（韓國用韓文、日本用日文），含分店名；不確定就空字串",
- "search_query": "在 Google 地圖搜尋這間店最可能找到的字串：當地語言店名 + 分店或地區",
+ "search_query": "在 Google 地圖最可能找到這間店的字串：當地語言正式店名 + 分店或地區",
  "country": "必須是 countries 清單中的一個，無法判斷就空字串",
  "city": "優先使用 cities 清單中的名稱，無法判斷就空字串",
  "types": ["只能從 types 清單挑，0 到 2 個"],
- "recommendations": ["推薦品項，每項一行，有價格就寫在後面，例：鹽麵包 ₩3,500"],
- "note": "一句 20 字內的繁體中文收藏原因"
+ "recommendations": ["貼文裡提到的品項，有價格就寫在後面，例：鹽麵包 ₩3,500"],
+ "recommendations_web": ["網路上常被推薦、但貼文沒提到的必點，最多 4 項，不要跟上面重複"],
+ "note": "一句 20 字內的繁體中文收藏原因，根據貼文內容寫"
 }
-所有說明文字用繁體中文。`;
+所有說明文字用繁體中文。查不到就照貼文內容填，不要編造。`;
   const user = `countries: ${JSON.stringify(ctx.countries)}
 cities: ${JSON.stringify(ctx.cities)}
 types: ${JSON.stringify(ctx.types)}
@@ -114,12 +128,20 @@ types: ${JSON.stringify(ctx.types)}
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 800, system, messages: [{ role: 'user', content: user }] }),
-    signal: AbortSignal.timeout(25000),
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001', max_tokens: 1500, system,
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+      messages: [{ role: 'user', content: user }],
+    }),
+    signal: AbortSignal.timeout(45000),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error?.message || 'AI 呼叫失敗');
-  const text = (data.content || []).map((c: any) => c.text || '').join('').replace(/```json|```/g, '').trim();
+  // 只看最後一次搜尋結果之後的文字，JSON 在那裡
+  const blocks: any[] = data.content || [];
+  let lastTool = -1;
+  blocks.forEach((b, i) => { if (b.type === 'web_search_tool_result' || b.type === 'server_tool_use') lastTool = i; });
+  const text = blocks.slice(lastTool + 1).map((c: any) => c.type === 'text' ? c.text : '').join('').replace(/```json|```/g, '').trim();
   const start = text.indexOf('{'), end = text.lastIndexOf('}');
   if (start < 0 || end <= start) throw new Error('AI 沒有回傳可用的資料');
   try { return JSON.parse(text.slice(start, end + 1)); }
@@ -156,8 +178,9 @@ export async function POST(req: NextRequest) {
 
   const cover = await saveCover(post.image);
 
-  if (!(await bump('ai', LIMIT_AI))) {
-    return NextResponse.json({ cover, caption: post.desc, error: '今日 AI 整理次數已用完，明天再試' }, { status: 429 });
+  const rAi = await bump('ai', LIMIT_AI);
+  if (rAi !== 'ok') {
+    return NextResponse.json({ cover, caption: post.desc, error: rAi === 'limit' ? '今日 AI 整理次數已用完，明天再試' : rAi }, { status: rAi === 'limit' ? 429 : 500 });
   }
   let fields: any = {};
   try {
@@ -172,9 +195,14 @@ export async function POST(req: NextRequest) {
   let candidates: any[] = [];
   let searchNote = '';
   if (fields.is_place !== false) {
-    if (await bump('search', LIMIT_SEARCH)) {
+    const rS = await bump('search', LIMIT_SEARCH);
+    if (rS === 'ok') {
       candidates = await searchGoogle(fields.search_query || fields.map_query || fields.name, country);
-    } else searchNote = '今日 Google 搜尋次數已用完，地址請手動填寫';
+      const retry = [fields.name, fields.city].filter(Boolean).join(' ');
+      if (!candidates.length && retry && retry !== fields.search_query && (await bump('search', LIMIT_SEARCH)) === 'ok') {
+        candidates = await searchGoogle(retry, country);
+      }
+    } else searchNote = rS === 'limit' ? '今日 Google 搜尋次數已用完，地址請手動填寫' : rS;
   }
 
   return NextResponse.json({ cover, caption: post.desc, fields, candidates, searchNote });
