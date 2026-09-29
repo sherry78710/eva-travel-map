@@ -58,13 +58,16 @@ function looksBlocked(title: string, desc: string, image: string) {
 // 從原始碼收集貼文照片（IG / Threads 的圖都放在 cdninstagram / fbcdn）
 // og:image 在 Reels 會疊播放鍵、在 Threads 是拼貼預覽卡，所以優先用這裡找到的原圖
 function collectImages(html: string, og: string) {
-  const re = /https?:(?:\\?\/){2}[^"'\s<>\\]*?(?:cdninstagram\.com|fbcdn\.net)[^"'\s<>]*/g;
+  // 網址可能被跳脫一層（https:\/\/）或好幾層（https:\\\/\\\/），先全部還原
+  const clean = html.replace(/\\+\//g, '/').replace(/\\+u0026/gi, '&').replace(/\\+u003d/gi, '=');
+  const re = /https?:\/\/[^"'\s<>\\]*?(?:cdninstagram\.com|fbcdn\.net)[^"'\s<>\\]*/g;
   const seen = new Set<string>();
   const out: string[] = [];
+  const raw: string[] = [];
   let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null) {
-    let u = m[0].replace(/\\\//g, '/').replace(/\\u0026/g, '&');
-    u = decodeEntities(u).replace(/[\\,;)]+$/, '');
+  while ((m = re.exec(clean)) !== null) {
+    const u = decodeEntities(m[0]).replace(/[,;)]+$/, '');
+    raw.push(u);
     if (!/\.(jpg|jpeg|webp|png|heic)/i.test(u)) continue;
     // 只收貼文照片：主機是 scontent 開頭、路徑是 /v/t51.xxx-15 這種格式（static.cdninstagram.com 是 logo 等網頁素材）
     let host = '', path = '';
@@ -72,15 +75,16 @@ function collectImages(html: string, og: string) {
     if (!/^scontent/i.test(host)) continue;
     if (!/\/t\d+\.\d+-15\//.test(path)) continue;
     if (/s150x150|p150x150|s320x320|p320x320|_s\.jpg/i.test(u)) continue; // 小縮圖
-    let key = u;
-    try { key = new URL(u).pathname.split('/').pop() || u; } catch {}
+    const key = path.split('/').pop() || u;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(u);
   }
   const ogKey = (() => { try { return new URL(og).pathname.split('/').pop() || og; } catch { return og; } })();
   const others = out.filter(u => { try { return new URL(u).pathname.split('/').pop() !== ogKey; } catch { return true; } });
-  console.log('images found', JSON.stringify({ total: out.length, others: others.length, sample: others.slice(0, 6).map(u => { try { const x = new URL(u); return x.hostname + x.pathname.slice(0, 40); } catch { return u.slice(0, 60); } }) }));
+  // 篩選前的原始網址也記下來，找不到照片時才知道是哪一條規則擋掉
+  const rawHosts = Array.from(new Set(raw.map(u => { try { const x = new URL(u); return x.hostname + x.pathname.slice(0, 28); } catch { return u.slice(0, 50); } }))).slice(0, 8);
+  console.log('images found', JSON.stringify({ htmlLen: html.length, raw: raw.length, total: out.length, others: others.length, embedImg: /EmbeddedMediaImage/.test(html), rawSample: rawHosts }));
   const list = (others.length ? others : [og]).filter(Boolean).slice(0, 6);
   console.log('cover source:', others.length ? `html (${list.length})` : 'og:image');
   return list;
