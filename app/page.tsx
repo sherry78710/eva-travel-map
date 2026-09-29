@@ -3759,7 +3759,8 @@ const TRIP_WD_ZH=['日','一','二','三','四','五','六'];
 // 解析營業時間 → 公休的星期幾（0=日…6=六）。逐段判斷：只有「該段含公休關鍵字」才解析該段星期
 function tripClosedWeekdays(oh:string):number[]{
   if(!oh||!oh.trim()) return [];
-  const text=oh;
+  // Google 的格式是「星期日: 休息」，統一換成「週日」才認得
+  const text=oh.replace(/星期|禮拜|礼拜/g,'週');
   if(/全年無休|每天營業|無休|7天|天天/.test(text)) return [];
   const zhMap:any={'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'日':0,'天':0};
   const closed=new Set<number>();
