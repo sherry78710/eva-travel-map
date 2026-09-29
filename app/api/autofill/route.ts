@@ -37,16 +37,28 @@ function readOg(html: string, key: string) {
   return m ? decodeEntities(m[1]) : '';
 }
 
+// IG 擋住時會回傳登入頁：沒有貼文文字，封面是 IG logo
+function looksBlocked(title: string, desc: string, image: string) {
+  if (!desc.trim()) return true;
+  if (/log ?in|sign ?up|create an account|登入|註冊/i.test(desc) && desc.length < 200) return true;
+  if (/static\.cdninstagram\.com\/rsrc|instagram\.com\/static/i.test(image)) return true;
+  return false;
+}
+
 async function readPost(url: string) {
-  const tries: Record<string, string>[] = [{}, { 'User-Agent': 'facebookexternalhit/1.1' }];
+  const tries: Record<string, string>[] = [
+    { 'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)' },
+    {},
+    { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1' },
+  ];
   for (const headers of tries) {
     try {
-      const res = await fetch(url, { headers, cache: 'no-store', signal: AbortSignal.timeout(12000) });
+      const res = await fetch(url, { headers, cache: 'no-store', redirect: 'follow', signal: AbortSignal.timeout(10000) });
       const html = await res.text();
       const title = readOg(html, 'og:title');
       const desc = readOg(html, 'og:description');
       const image = readOg(html, 'og:image');
-      if (desc || title) return { title, desc, image };
+      if (!looksBlocked(title, desc, image)) return { title, desc, image };
     } catch (e) { console.error('readPost', e); }
   }
   return null;
@@ -109,7 +121,9 @@ types: ${JSON.stringify(ctx.types)}
   if (!res.ok) throw new Error(data?.error?.message || 'AI 呼叫失敗');
   const text = (data.content || []).map((c: any) => c.text || '').join('').replace(/```json|```/g, '').trim();
   const start = text.indexOf('{'), end = text.lastIndexOf('}');
-  return JSON.parse(text.slice(start, end + 1));
+  if (start < 0 || end <= start) throw new Error('AI 沒有回傳可用的資料');
+  try { return JSON.parse(text.slice(start, end + 1)); }
+  catch { throw new Error('AI 回傳格式錯誤'); }
 }
 
 async function searchGoogle(query: string, country: string) {
@@ -138,7 +152,7 @@ export async function POST(req: NextRequest) {
   if (!ALLOWED.includes(host)) return NextResponse.json({ error: '只支援 Instagram / Threads 連結' }, { status: 400 });
 
   const post = await readPost(url);
-  if (!post) return NextResponse.json({ error: '讀不到這則貼文，可能是私人帳號或已刪除' }, { status: 422 });
+  if (!post) return NextResponse.json({ error: 'IG 暫時擋住讀取，等幾分鐘再按重試；私人帳號的貼文也讀不到' }, { status: 422 });
 
   const cover = await saveCover(post.image);
 
