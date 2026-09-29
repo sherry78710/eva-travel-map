@@ -1358,7 +1358,6 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
   const [filterCity, setFilterCity] = useState("");
   const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
   const [showCityOrder, setShowCityOrder] = useState(false);
-  const [sortMode, setSortMode] = useState<'default'|'ratingDesc'|'ratingAsc'>('default');
 
   const list = (places||[]).filter((p:any) => p.country === country);
 
@@ -1390,14 +1389,6 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(p);
   });
-  if (sortMode === 'ratingDesc' || sortMode === 'ratingAsc') {
-    Object.keys(grouped).forEach(key => {
-      grouped[key] = [...grouped[key]].sort((a:any,b:any) => {
-        const diff = (b.rating||0) - (a.rating||0);
-        return sortMode === 'ratingDesc' ? diff : -diff;
-      });
-    });
-  }
   const groupedEntries = Object.entries(grouped).sort((ea:any, eb:any) => {
     const a = ea[1][0]||{}, b = eb[1][0]||{};
     const ka = `${a.city||""}|${a.district||""}|${a.neighborhood||""}`;
@@ -1472,8 +1463,8 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
             })}
           </div>
           <div style={{ display:"flex", gap:4, flexShrink:0 }}>
-            {(
-              <button onClick={()=>setShowCityOrder(true)} style={{ width:28, height:28, borderRadius:8, background:sortMode!=='default'?"#3C3C3C":"#EDE8E2", border:"none", cursor:"pointer", fontSize:14, color:sortMode!=='default'?"#fff":"#8E8E93", display:"flex", alignItems:"center", justifyContent:"center" }}>⇅</button>
+            {baseCities.length > 1 && (
+              <button onClick={()=>setShowCityOrder(true)} style={{ width:28, height:28, borderRadius:8, background:"#EDE8E2", border:"none", cursor:"pointer", fontSize:14, color:"#8E8E93", display:"flex", alignItems:"center", justifyContent:"center" }}>⇅</button>
             )}
             <button onClick={()=>setViewMode('list')} style={{ background:viewMode==='list'?"#3C3C3C":"none", border:"none", borderRadius:6, padding:"4px 7px", cursor:"pointer", display:"flex", alignItems:"center", gap:1.5, flexDirection:"column" }}>
               {[0,1,2].map(i=><div key={i} style={{ width:12, height:2, background:viewMode==='list'?"white":"#8E8E93", borderRadius:1 }} />)}
@@ -1488,7 +1479,6 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
       {showCityOrder && (
         <CityOrderManager country={country} cities={baseCities}
           counts={Object.fromEntries(baseCities.map((c:string)=>[c, rows.filter((r:any)=>r.city===c).length]))}
-          sortMode={sortMode} onChangeSortMode={setSortMode}
           onClose={()=>setShowCityOrder(false)}
           onChange={(list:string[])=>onUpdateCityOrder(country, list)} />
       )}
@@ -2343,13 +2333,103 @@ function parseAddress(addr, geoData) {
   };
 }
 
+const SOCIAL_RE = /^https?:\/\/(www\.)?(instagram\.com|threads\.com|threads\.net)\//i;
+
+function AutoTag() {
+  return <span style={{ marginLeft:6, fontSize:10, fontWeight:600, color:"#185FA5", background:"#E6F1FB", padding:"1px 6px", borderRadius:6, textTransform:"none", letterSpacing:0 }}>自動</span>;
+}
+
 function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb, initial, convertInboxId, onConverted }:any) {
-  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[],branches:[], ...(initial||{}) });
+  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[],branches:[],google_place_id:"", ...(initial||{}) });
   const [saving,setSaving] = useState(false);
   const photoInputRef = useRef(null);
-  const set=(k:string,v:any)=>setF((x:any)=>({...x,[k]:v}));
+  // 自動填寫狀態
+  const [autoKeys,setAutoKeys] = useState<string[]>([]);
+  const [af,setAf] = useState<{status:'idle'|'loading'|'done'|'error', msg:string}>({status:'idle', msg:''});
+  const [preview,setPreview] = useState<{cover:string, caption:string}|null>(null);
+  const [cands,setCands] = useState<any[]>([]);
+  const [candIdx,setCandIdx] = useState(0);
+  const [candBusy,setCandBusy] = useState(false);
+  const lastUrl = useRef("");
+  const fRef = useRef<any>(f); fRef.current = f;
+
+  const clearAuto=(k:string)=>setAutoKeys(ks=>ks.filter(x=>x!==k));
+  const set=(k:string,v:any)=>{ setF((x:any)=>({...x,[k]:v})); clearAuto(k); };
+  const isAuto=(k:string)=>autoKeys.includes(k);
+
+  async function runAutofill(url:string){
+    if(!SOCIAL_RE.test(url) || lastUrl.current===url) return;
+    lastUrl.current=url;
+    setAf({status:'loading', msg:'讀取貼文、整理資料中…'});
+    setCands([]); setCandIdx(0);
+    try{
+      const geo = geoDataProp||GEO;
+      const cities:any = {}; Object.keys(geo).forEach(c=>{ cities[c]=Object.keys(geo[c]||{}); });
+      const res = await fetch('/api/autofill', { method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ url, country: f.country, countries, cities, types }) });
+      const d = await res.json();
+      if(d.cover || d.caption){
+        setPreview({ cover:d.cover||'', caption:d.caption||'' });
+        if(d.cover && !(fRef.current.photos||[]).includes(d.cover)){ const n={...fRef.current, photos:[d.cover, ...(fRef.current.photos||[])]}; setF(n); fRef.current=n; }
+      }
+      if(!res.ok || d.error){ setAf({status:'error', msg:d.error||'自動填寫失敗'}); return; }
+      const fl = d.fields||{};
+      const x:any = fRef.current;
+      const n:any = {...x};
+      const filled:string[] = [];
+      const put=(k:string, v:any)=>{ const empty = Array.isArray(x[k]) ? x[k].length===0 : !String(x[k]||'').trim(); if(empty && v && (!Array.isArray(v)||v.length)){ n[k]=v; filled.push(k); } };
+      put('name', fl.name);
+      put('map_query', fl.map_query);
+      put('note', fl.note);
+      put('recommendations', Array.isArray(fl.recommendations) ? fl.recommendations.join('\n') : fl.recommendations);
+      put('types', (fl.types||[]).filter((t:string)=>types.includes(t)));
+      if(!x.country && countries.includes(fl.country)){ n.country=fl.country; if(fl.city) n.city=fl.city; }
+      else if(x.country===fl.country && !x.city && fl.city){ n.city=fl.city; }
+      setF(n); fRef.current=n;
+      setAutoKeys(ks=>Array.from(new Set([...ks, ...filled])));
+      setCands(d.candidates||[]);
+      if(fl.is_place===false) setAf({status:'done', msg:'這則貼文看起來不像在介紹店家，已先填入能抓到的內容'});
+      else if(d.searchNote) setAf({status:'done', msg:d.searchNote});
+      else if(!(d.candidates||[]).length) setAf({status:'done', msg:'Google 地圖找不到這間店，地址請手動填寫'});
+      else setAf({status:'done', msg:''});
+    }catch(e:any){
+      setAf({status:'error', msg:'自動填寫失敗，請確認網路後再試'});
+    }
+  }
+
+  // 從待整理或捷徑帶連結進來：一打開就自動填寫
+  useEffect(()=>{ if(SOCIAL_RE.test(f.source_url||'') && !f.name.trim()) runAutofill(f.source_url); },[]);
+
+  async function useCandidate(c:any){
+    if(candBusy) return;
+    setCandBusy(true);
+    try{
+      const res = await fetch(`/api/place-details?id=${encodeURIComponent(c.id)}&country=${encodeURIComponent(f.country||'')}`);
+      const d = await res.json();
+      if(!res.ok || d.error){ alert(d.error||'查詢失敗'); return; }
+      const addr = d.address || c.address || '';
+      const parsed = addr ? parseAddressMultiCountry(addr) : null;
+      const x:any = fRef.current;
+      const n:any = {...x, google_place_id:c.id};
+      const filled:string[] = [];
+      if(addr){ n.address=addr; filled.push('address');
+        if(parsed){ ['country','city','district','neighborhood'].forEach(k=>{ if((parsed as any)[k]) n[k]=(parsed as any)[k]; }); } }
+      if(d.opening_hours && !String(x.opening_hours||'').trim()){ n.opening_hours=d.opening_hours; filled.push('opening_hours'); }
+      setF(n); fRef.current=n;
+      setAutoKeys(ks=>Array.from(new Set([...ks, ...filled])));
+      setCands([]);
+    } finally { setCandBusy(false); }
+  }
+
+  function removeCover(){
+    if(!preview) return;
+    const cv = preview.cover;
+    setF((x:any)=>({...x, photos:(x.photos||[]).filter((p:string)=>p!==cv)}));
+    setPreview(p=>p?{...p, cover:''}:p);
+  }
 
   function handleAddressChange(addr: string) {
+    clearAuto('address');
     setF((x:any) => ({ ...x, address: addr }));
     if (addr.length > 3) {
       const parsed = parseAddressMultiCountry(addr);
@@ -2391,6 +2471,9 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
     onBack();
   }
 
+  const lbl = { fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 } as any;
+  const cand = cands[candIdx];
+
   return (
     <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
       <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 16px)", paddingBottom:"16px", paddingLeft:"20px", paddingRight:"20px", display:"flex", alignItems:"flex-end", justifyContent:"space-between" }}>
@@ -2402,23 +2485,66 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
         </button>
       </div>
       <div style={{ padding:"16px 20px 40px" }}>
+
+        {/* 來源連結（最上方）：貼上 IG / Threads 連結自動填寫 */}
+        <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
+          <div style={{ padding:"14px 16px" }}>
+            <div style={lbl}>來源連結 <span style={{ color:"#C7C7CC", fontWeight:400, textTransform:"none" }}>· 貼上 IG／Threads 連結自動填寫</span></div>
+            <input value={f.source_url} onChange={e=>{ const v=e.target.value; set("source_url", v); if(SOCIAL_RE.test(v.trim())) runAutofill(v.trim()); }}
+              style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
+            {af.status==='loading' && <div style={{ fontSize:13, color:"#8E8E93", marginTop:8 }}>{af.msg}</div>}
+            {af.status!=='loading' && af.msg && <div style={{ fontSize:13, color: af.status==='error' ? "#C0392B" : "#8E8E93", marginTop:8 }}>{af.msg}</div>}
+            {af.status==='error' && SOCIAL_RE.test(f.source_url||'') && (
+              <button onClick={()=>{ lastUrl.current=""; runAutofill(f.source_url.trim()); }} style={{ marginTop:6, background:"none", border:"none", color:"#007AFF", fontSize:13, padding:0, cursor:"pointer" }}>重試</button>
+            )}
+          </div>
+          {preview && (preview.cover || preview.caption) && (
+            <div style={{ display:"flex", gap:10, padding:"0 16px 14px", borderTop:"1px solid #EDE8E2", paddingTop:12 }}>
+              {preview.cover && (
+                <div style={{ position:"relative", width:72, height:72, borderRadius:10, overflow:"hidden", flexShrink:0 }}>
+                  <img src={preview.cover} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                  <button onClick={removeCover} aria-label="不要這張封面"
+                    style={{ position:"absolute", top:2, right:2, width:18, height:18, borderRadius:"50%", background:"rgba(0,0,0,0.6)", border:"none", color:"white", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+                </div>
+              )}
+              <div style={{ fontSize:13, color:"#6b655c", lineHeight:1.55, display:"-webkit-box", WebkitLineClamp:4, WebkitBoxOrient:"vertical", overflow:"hidden" } as any}>{preview.caption}</div>
+            </div>
+          )}
+        </div>
+
+        {/* Google 找到的店：確認後才填入地址與營業時間 */}
+        {cand && (
+          <div style={{ background:"#fff", borderRadius:16, padding:"12px 16px", marginBottom:12, border:"1px solid rgba(28,27,25,0.08)" }}>
+            <div style={{ fontSize:12, color:"#8E8E93", marginBottom:4 }}>Google 地圖找到{cands.length>1?`（${candIdx+1}/${cands.length}）`:''}</div>
+            <div style={{ fontSize:15, fontWeight:600, color:"#000" }}>{cand.name}</div>
+            <div style={{ fontSize:13, color:"#6b655c", marginTop:2, marginBottom:10 }}>{cand.address}</div>
+            <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+              <button onClick={()=>useCandidate(cand)} disabled={candBusy}
+                style={{ padding:"6px 14px", borderRadius:10, border:"none", background:"#3C3C3C", color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>{candBusy?"填入中…":"用這間"}</button>
+              {candIdx < cands.length-1
+                ? <button onClick={()=>setCandIdx(i=>i+1)} style={{ padding:"6px 10px", border:"none", background:"none", color:"#8E8E93", fontSize:14, cursor:"pointer" }}>不是，看下一間</button>
+                : <button onClick={()=>setCands([])} style={{ padding:"6px 10px", border:"none", background:"none", color:"#8E8E93", fontSize:14, cursor:"pointer" }}>都不是，自己填</button>}
+            </div>
+          </div>
+        )}
+
         <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
           <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地點名稱</div>
+            <div style={lbl}>地點名稱{isAuto('name')&&<AutoTag/>}</div>
             <input value={f.name} onChange={e=>set("name",e.target.value)} placeholder="" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
           <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地圖搜尋名稱 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 當地語言・選填</span></div>
+            <div style={lbl}>地圖搜尋名稱 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 當地語言・選填</span>{isAuto('map_query')&&<AutoTag/>}</div>
             <input value={f.map_query} onChange={e=>set("map_query",e.target.value)} placeholder=""
               style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
           <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>收藏原因</div>
+            <div style={lbl}>收藏原因{isAuto('note')&&<AutoTag/>}</div>
             <input value={f.note} onChange={e=>set("note",e.target.value)} placeholder="" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
           <div style={{ padding:"14px 16px" }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>營業時間 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 選填</span></div>
-            <textarea value={f.opening_hours} onChange={e=>set("opening_hours",e.target.value)} placeholder={"例：週一至週六 11:30–21:00\n週日公休"} rows={3} style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6 }} />
+            <div style={lbl}>營業時間 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 選填</span>{isAuto('opening_hours')&&<AutoTag/>}</div>
+            <textarea value={f.opening_hours} onChange={e=>set("opening_hours",e.target.value)} placeholder={"例：週一至週六 11:30–21:00\n週日公休"} rows={isAuto('opening_hours')?7:3} style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6 }} />
           </div>
         </div>
 
@@ -2428,7 +2554,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
 
         <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
           <div style={{ padding:"14px 16px" }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>地址 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 貼上自動帶入位置</span></div>
+            <div style={lbl}>地址 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 貼上自動帶入位置</span>{isAuto('address')&&<AutoTag/>}</div>
             <input value={f.address} onChange={e=>handleAddressChange(e.target.value)}
               style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
@@ -2438,22 +2564,17 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
           onChange={(branches:any)=>set("branches",branches)} />
 
         <div style={{ background:"#FDF8F3", borderRadius:16, padding:16, marginBottom:12 }}>
-          <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>類型</div>
+          <div style={{ ...lbl, marginBottom:10 }}>類型{isAuto('types')&&<AutoTag/>}</div>
           <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
             {types.map(t=>{ const a=f.types.includes(t); return <button key={t} onClick={()=>set("types",a?f.types.filter(x=>x!==t):[...f.types,t])} style={{ padding:"7px 16px", borderRadius:20, border:"none", background:a?"#3C3C3C":"#EDE8E2", color:a?"white":"#3C3C43", fontSize:14, cursor:"pointer", fontWeight:a?600:400 }}>{t}</button>; })}
           </div>
         </div>
 
         <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
-          <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>推薦品項</div>
+          <div style={{ padding:"14px 16px" }}>
+            <div style={lbl}>推薦品項{isAuto('recommendations')&&<AutoTag/>}</div>
             <textarea value={f.recommendations as string} onChange={e=>set("recommendations", e.target.value)} placeholder="" rows={3}
               style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6 }} />
-          </div>
-          <div style={{ padding:"14px 16px" }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>來源連結</div>
-            <input value={f.source_url} onChange={e=>set("source_url", e.target.value)}
-              style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
         </div>
 
@@ -2464,7 +2585,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
             {(f.photos||[]).map((photo,i)=>(
               <div key={i} style={{ position:"relative", width:72, height:72, borderRadius:10, overflow:"hidden", flexShrink:0 }}>
                 <img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                <button onClick={()=>set("photos",(f.photos||[]).filter((_,idx)=>idx!==i))}
+                <button onClick={()=>{ set("photos",(f.photos||[]).filter((_,idx)=>idx!==i)); if(preview && photo===preview.cover) setPreview(p=>p?{...p,cover:''}:p); }}
                   style={{ position:"absolute", top:2, right:2, width:18, height:18, borderRadius:"50%", background:"rgba(0,0,0,0.6)", border:"none", color:"white", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
               </div>
             ))}
@@ -2477,6 +2598,57 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── 詳情頁：更多 Google 照片（依 Google 規定不存照片，點開才即時載入）──
+function GooglePhotos({ placeId, onOpen }:any){
+  const [open,setOpen]=useState(false);
+  const [loading,setLoading]=useState(false);
+  const [photos,setPhotos]=useState<any[]|null>(null);
+  const [err,setErr]=useState("");
+  async function toggle(){
+    if(open){ setOpen(false); return; }
+    setOpen(true); setLoading(true); setErr("");
+    try{
+      const res=await fetch(`/api/place-photos?id=${encodeURIComponent(placeId)}`);
+      const d=await res.json();
+      if(!res.ok||d.error) setErr(d.error||"載入失敗");
+      else setPhotos(d.photos||[]);
+    }catch(_){ setErr("載入失敗，請確認網路"); }
+    setLoading(false);
+  }
+  const card={ background:"#fff", borderRadius:16, overflow:"hidden", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" } as any;
+  return (
+    <div style={card}>
+      <button onClick={toggle} style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px", background:"none", border:"none", cursor:"pointer", fontFamily:"inherit" }}>
+        <span style={{ fontSize: open?11:14, color: open?"#8E8E93":"#000", textTransform: open?"uppercase":"none", letterSpacing: open?0.5:0 }}>{open?"更多 Google 照片":"看 Google 照片"}</span>
+        <span style={{ fontSize:13, color:"#C7C7CC" }}>{open?"▲":"▼"}</span>
+      </button>
+      {open && (
+        <div style={{ padding:"0 16px 14px" }}>
+          {loading && <div style={{ fontSize:13, color:"#8E8E93" }}>載入中…</div>}
+          {err && <div style={{ fontSize:13, color:"#C0392B" }}>{err}</div>}
+          {photos && !photos.length && <div style={{ fontSize:13, color:"#8E8E93" }}>Google 地圖上沒有這間店的照片</div>}
+          {photos && photos.length>0 && (
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(2, minmax(0,1fr))", gap:8 }}>
+              {photos.map((ph:any,i:number)=>(
+                <div key={i}>
+                  <div onClick={()=>onOpen(photos.map((x:any)=>x.uri), i)} style={{ aspectRatio:"1", borderRadius:10, overflow:"hidden", cursor:"pointer", background:"#F5F0EB" }}>
+                    <img src={ph.uri} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                  </div>
+                  <div style={{ fontSize:11, color:"#8E8E93", marginTop:3, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                    Google · {ph.authorUri ? <a href={ph.authorUri} target="_blank" rel="noreferrer" style={{ color:"#8E8E93" }}>{ph.author||"匿名"}</a> : (ph.author||"匿名")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <a href={`https://www.google.com/maps/search/?api=1&query=Google&query_place_id=${placeId}`} target="_blank" rel="noreferrer"
+            style={{ display:"block", textAlign:"right", fontSize:12, color:"#8E8E93", marginTop:10, textDecoration:"none" }}>在 Google 地圖看更多 ↗</a>
+        </div>
+      )}
     </div>
   );
 }
@@ -2853,6 +3025,7 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
             </div>
           );
         })}
+        {place.google_place_id && <GooglePhotos placeId={place.google_place_id} onOpen={(ph:string[],i:number)=>setLightboxLocal({photos:ph,index:i})} />}
         </div>
       </div>
       {addTripOpen && (
@@ -3448,14 +3621,13 @@ function CatManager({ country, cats, grouped, onClose, onChange }:any){
   );
 }
 
-function CityOrderManager({ country, cities, counts, sortMode, onChangeSortMode, onClose, onChange }:any){
+function CityOrderManager({ country, cities, counts, onClose, onChange }:any){
   const [list,setList]=useState<string[]>(cities);
   const [dragIdx,setDragIdx]=useState<number|null>(null);
   const [overIdx,setOverIdx]=useState<number|null>(null);
   const [dragY,setDragY]=useState(0);
   const startY=useRef(0);
   const ITEM_H=52;
-  const SORT_OPTS=[{k:'default',label:'預設順序'},{k:'ratingDesc',label:'評分高到低'},{k:'ratingAsc',label:'評分低到高'}];
   function commit(next:string[]){ setList(next); onChange(next); }
   function dStart(e:any,i:number){ e.preventDefault(); startY.current=e.touches[0].clientY; setDragIdx(i); setOverIdx(i); setDragY(0); }
   function dMove(e:any){ if(dragIdx===null) return; e.preventDefault(); const dy=e.touches[0].clientY-startY.current; setDragY(dy); setOverIdx(Math.max(0,Math.min(list.length-1,dragIdx+Math.round(dy/ITEM_H)))); }
@@ -3465,24 +3637,10 @@ function CityOrderManager({ country, cities, counts, sortMode, onChangeSortMode,
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",background:"#F5F0EB",borderTopLeftRadius:20,borderTopRightRadius:20,maxHeight:"82vh",overflowY:"auto",paddingBottom:"calc(env(safe-area-inset-bottom) + 20px)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 18px 10px"}}>
           <div style={{width:44}} />
-          <div style={{fontSize:16,fontWeight:600}}>{country} 排序方式</div>
+          <div style={{fontSize:16,fontWeight:600}}>{country} 城市順序</div>
           <button onClick={onClose} style={{background:"none",border:"none",color:"#007AFF",fontSize:16,fontWeight:600,cursor:"pointer",padding:0}}>完成</button>
         </div>
-
         <div style={{padding:"4px 18px 0"}}>
-          <div style={{fontSize:11,color:"#8E8E93",fontWeight:600,margin:"6px 2px"}}>排序方式</div>
-          <div style={{background:"#FDF8F3",borderRadius:14,overflow:"hidden",marginBottom:18}}>
-            {SORT_OPTS.map((o,i)=>(
-              <button key={o.k} onClick={()=>onChangeSortMode(o.k)} style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 14px", background:"none", border:"none", borderBottom:i<SORT_OPTS.length-1?"1px solid #EDE8E2":"none", cursor:"pointer", textAlign:"left" }}>
-                <span style={{fontSize:14,color:"#000"}}>{o.label}</span>
-                {sortMode===o.k && <span style={{color:"#3C3C43",fontSize:14}}>✓</span>}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div style={{padding:"4px 18px 0"}}>
-          <div style={{fontSize:11,color:"#8E8E93",fontWeight:600,margin:"6px 2px"}}>城市順序</div>
           <div style={{fontSize:12,color:"#8E8E93",marginBottom:10}}>按住 ⠿ 拖拉排序，之後新地點都會照這個順序顯示。</div>
           <div style={{background:"#FDF8F3",borderRadius:14,overflow:"hidden"}}>
             {list.map((c,i)=>{
@@ -4176,6 +4334,18 @@ export default function App() {
     shortcutHandled.current=true;
     try{
       const sp=new URLSearchParams(window.location.search);
+      // 捷徑（方向 B）：?add=1&country=..&url=.. 直接打開新增頁並自動填寫
+      if(sp.get('add')){
+        const raw=window.location.search;
+        let mi=raw.indexOf('&url='); if(mi<0) mi=raw.indexOf('?url=');
+        let url = mi>=0 ? raw.slice(mi+5) : '';
+        if(url){ try{ url=decodeURIComponent(url); }catch(_){} }
+        setAddInitial({ country: sp.get('country')||'', source_url: url.trim() });
+        setAddConvertInboxId(null);
+        setHistory(h=> h[h.length-1]==='add'? h : [...h,'add']);
+        try{ window.history.replaceState({},'',window.location.pathname); }catch(_){}
+        return;
+      }
       if(sp.get('inbox')){
         const raw=window.location.search;
         let mi=raw.indexOf('&url='); if(mi<0) mi=raw.indexOf('?url=');
@@ -4334,6 +4504,7 @@ export default function App() {
       source_url:p.source_url||'',
       rating:0, review:'', summary:p.map_query||'', tags:[], photos:p.photos||[],
       branches:p.branches||[],
+      google_place_id:p.google_place_id||null,
     };
     const {data,error}=await sb.from('places').insert([payload]).select().single();
     if(!error&&data) setPlaces(ps=>[{...data, map_query:data.summary||'', branches:data.branches||[]},...ps]);
