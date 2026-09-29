@@ -66,7 +66,12 @@ function collectImages(html: string, og: string) {
     let u = m[0].replace(/\\\//g, '/').replace(/\\u0026/g, '&');
     u = decodeEntities(u).replace(/[\\,;)]+$/, '');
     if (!/\.(jpg|jpeg|webp|png|heic)/i.test(u)) continue;
-    if (/t51\.2885-19|t51\.82787-19|profile|s150x150|p150x150|s320x320|p320x320|_s\.jpg/i.test(u)) continue; // 大頭貼、小縮圖
+    // 只收貼文照片：主機是 scontent 開頭、路徑是 /v/t51.xxx-15 這種格式（static.cdninstagram.com 是 logo 等網頁素材）
+    let host = '', path = '';
+    try { const x = new URL(u); host = x.hostname; path = x.pathname; } catch { continue; }
+    if (!/^scontent/i.test(host)) continue;
+    if (!/\/t\d+\.\d+-15\//.test(path)) continue;
+    if (/s150x150|p150x150|s320x320|p320x320|_s\.jpg/i.test(u)) continue; // 小縮圖
     let key = u;
     try { key = new URL(u).pathname.split('/').pop() || u; } catch {}
     if (seen.has(key)) continue;
