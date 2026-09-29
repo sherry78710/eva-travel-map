@@ -2372,8 +2372,10 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       let d:any = {};
       try{ d = await res.json(); }catch(_){ setAf({status:'error', msg:`伺服器錯誤（代碼 ${res.status}），請稍後再試`}); return; }
       if(d.cover || d.caption){
-        setPreview({ cover:d.cover||'', caption:d.caption||'' });
-        if(d.cover && !(fRef.current.photos||[]).includes(d.cover)){ const n={...fRef.current, photos:[d.cover, ...(fRef.current.photos||[])]}; setF(n); fRef.current=n; }
+        setPreview({ cover:d.cover||'', caption:d.caption||'', count:(d.images||[]).length } as any);
+        const imgs:string[] = (d.images && d.images.length ? d.images : (d.cover ? [d.cover] : []));
+        const fresh = imgs.filter((u:string)=>!(fRef.current.photos||[]).includes(u));
+        if(fresh.length){ const n={...fRef.current, photos:[...fresh, ...(fRef.current.photos||[])]}; setF(n); fRef.current=n; }
       }
       if(!res.ok || d.error){ setAf({status:'error', msg:(d.error||'自動填寫失敗')+`（代碼 ${res.status}）`}); return; }
       const fl = d.fields||{};
@@ -2528,7 +2530,10 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
                     style={{ position:"absolute", top:2, right:2, width:18, height:18, borderRadius:"50%", background:"rgba(0,0,0,0.6)", border:"none", color:"white", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
                 </div>
               )}
-              <div style={{ fontSize:13, color:"#6b655c", lineHeight:1.55, display:"-webkit-box", WebkitLineClamp:4, WebkitBoxOrient:"vertical", overflow:"hidden" } as any}>{preview.caption}</div>
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontSize:13, color:"#6b655c", lineHeight:1.55, display:"-webkit-box", WebkitLineClamp:4, WebkitBoxOrient:"vertical", overflow:"hidden" } as any}>{preview.caption}</div>
+                {(preview as any).count>1 && <div style={{ fontSize:12, color:"#8E8E93", marginTop:4 }}>共 {(preview as any).count} 張照片已加入下方照片區</div>}
+              </div>
             </div>
           )}
         </div>

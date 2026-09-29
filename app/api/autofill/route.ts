@@ -55,21 +55,30 @@ function looksBlocked(title: string, desc: string, image: string) {
   return false;
 }
 
-// IG 的 og:image 在 Reels 會疊上播放鍵，優先找原始碼裡沒疊圖的版本
-function pickCover(html: string, og: string) {
-  const unesc = (u: string) => decodeEntities(u.replace(/\\u0026/g, '&').replace(/\\\//g, '/'));
-  const tries: [string, RegExp][] = [
-    ['display_url', /"display_url"\s*:\s*"(https:[^"]+)"/],
-    ['thumbnail_src', /"thumbnail_src"\s*:\s*"(https:[^"]+)"/],
-    ['image_versions', /"image_versions2"\s*:\s*\{\s*"candidates"\s*:\s*\[\s*\{[^}]*?"url"\s*:\s*"(https:[^"]+)"/],
-    ['twitter:image', /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i],
-  ];
-  for (const [label, re] of tries) {
-    const m = html.match(re);
-    if (m && m[1] && unesc(m[1]) !== og) { console.log('cover source:', label); return unesc(m[1]); }
+// 從原始碼收集貼文照片（IG / Threads 的圖都放在 cdninstagram / fbcdn）
+// og:image 在 Reels 會疊播放鍵、在 Threads 是拼貼預覽卡，所以優先用這裡找到的原圖
+function collectImages(html: string, og: string) {
+  const re = /https?:(?:\\?\/){2}[^"'\s<>\\]*?(?:cdninstagram\.com|fbcdn\.net)[^"'\s<>]*/g;
+  const seen = new Set<string>();
+  const out: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    let u = m[0].replace(/\\\//g, '/').replace(/\\u0026/g, '&');
+    u = decodeEntities(u).replace(/[\\,;)]+$/, '');
+    if (!/\.(jpg|jpeg|webp|png|heic)/i.test(u)) continue;
+    if (/t51\.2885-19|t51\.82787-19|profile|s150x150|p150x150|s320x320|p320x320|_s\.jpg/i.test(u)) continue; // 大頭貼、小縮圖
+    let key = u;
+    try { key = new URL(u).pathname.split('/').pop() || u; } catch {}
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(u);
   }
-  console.log('cover source: og:image');
-  return og;
+  const ogKey = (() => { try { return new URL(og).pathname.split('/').pop() || og; } catch { return og; } })();
+  const others = out.filter(u => { try { return new URL(u).pathname.split('/').pop() !== ogKey; } catch { return true; } });
+  console.log('images found', JSON.stringify({ total: out.length, others: others.length, sample: others.slice(0, 6).map(u => { try { const x = new URL(u); return x.hostname + x.pathname.slice(0, 40); } catch { return u.slice(0, 60); } }) }));
+  const list = (others.length ? others : [og]).filter(Boolean).slice(0, 6);
+  console.log('cover source:', others.length ? `html (${list.length})` : 'og:image');
+  return list;
 }
 
 // 從轉址頁找出真正的貼文網址（Threads 分享短連結常用 JS 或 meta 轉址）
@@ -109,7 +118,7 @@ async function readPost(url: string) {
         console.log('readPost', JSON.stringify({ ua: headers['User-Agent']?.slice(0, 20) || 'default', status: res.status, final: res.url, titleLen: title.length, descLen: desc.length, hasImg: !!og }));
         // Threads 有時只有標題、沒有內文
         const text = desc || (isThreads && title && !/^threads$/i.test(title.trim()) ? title : '');
-        if (!looksBlocked(title, text, og)) return { title, desc: text, image: pickCover(html, og) };
+        if (!looksBlocked(title, text, og)) return { title, desc: text, images: collectImages(html, og) };
         // 拿不到內容：可能是轉址頁，找真正的網址再試
         const next = findRedirect(html, res.url || target);
         if (!next || next === target) break;
@@ -238,7 +247,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `讀不到這則 ${site} 貼文，可能暫時被擋住，等幾分鐘再按重試；私人帳號的貼文也讀不到` }, { status: 422 });
   }
 
-  const cover = await saveCover(post.image);
+  const images = (await Promise.all((post.images || []).map(saveCover))).filter(Boolean);
+  const cover = images[0] || '';
 
   const rAi = await bump('ai', LIMIT_AI);
   if (rAi !== 'ok') {
@@ -267,5 +277,5 @@ export async function POST(req: NextRequest) {
     } else searchNote = rS === 'limit' ? '今日 Google 搜尋次數已用完，地址請手動填寫' : rS;
   }
 
-  return NextResponse.json({ cover, caption: post.desc, fields, candidates, searchNote });
+  return NextResponse.json({ cover, images, caption: post.desc, fields, candidates, searchNote });
 }
