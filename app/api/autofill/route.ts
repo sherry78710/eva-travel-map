@@ -55,21 +55,68 @@ function looksBlocked(title: string, desc: string, image: string) {
   return false;
 }
 
+// IG 的 og:image 在 Reels 會疊上播放鍵，優先找原始碼裡沒疊圖的版本
+function pickCover(html: string, og: string) {
+  const unesc = (u: string) => decodeEntities(u.replace(/\\u0026/g, '&').replace(/\\\//g, '/'));
+  const tries: [string, RegExp][] = [
+    ['display_url', /"display_url"\s*:\s*"(https:[^"]+)"/],
+    ['thumbnail_src', /"thumbnail_src"\s*:\s*"(https:[^"]+)"/],
+    ['image_versions', /"image_versions2"\s*:\s*\{\s*"candidates"\s*:\s*\[\s*\{[^}]*?"url"\s*:\s*"(https:[^"]+)"/],
+    ['twitter:image', /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i],
+  ];
+  for (const [label, re] of tries) {
+    const m = html.match(re);
+    if (m && m[1] && unesc(m[1]) !== og) { console.log('cover source:', label); return unesc(m[1]); }
+  }
+  console.log('cover source: og:image');
+  return og;
+}
+
+// 從轉址頁找出真正的貼文網址（Threads 分享短連結常用 JS 或 meta 轉址）
+function findRedirect(html: string, base: string) {
+  const pats = [
+    /<meta[^>]+http-equiv=["']refresh["'][^>]+content=["'][^"']*url=([^"']+)["']/i,
+    /<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i,
+    /<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i,
+    /(?:location\.href|location\.replace\(|window\.location)\s*=?\s*["'](https?:\/\/[^"']+)["']/i,
+    /"(https:\\?\/\\?\/www\.threads\.(?:com|net)\\?\/@[^"]+?\\?\/post\\?\/[A-Za-z0-9_-]+)/,
+  ];
+  for (const re of pats) {
+    const m = html.match(re);
+    if (m && m[1]) {
+      try { const u = new URL(decodeEntities(m[1].replace(/\\\//g, '/')), base).toString(); if (u !== base) return u; } catch {}
+    }
+  }
+  return '';
+}
+
 async function readPost(url: string) {
   const tries: Record<string, string>[] = [
     { 'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)' },
     {},
     { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1' },
   ];
+  const isThreads = /threads\.(com|net)/i.test(url);
   for (const headers of tries) {
-    try {
-      const res = await fetch(url, { headers, cache: 'no-store', redirect: 'follow', signal: AbortSignal.timeout(10000) });
-      const html = await res.text();
-      const title = readOg(html, 'og:title');
-      const desc = readOg(html, 'og:description');
-      const image = readOg(html, 'og:image');
-      if (!looksBlocked(title, desc, image)) return { title, desc, image };
-    } catch (e) { console.error('readPost', e); }
+    let target = url;
+    for (let hop = 0; hop < 3; hop++) {
+      try {
+        const res = await fetch(target, { headers, cache: 'no-store', redirect: 'follow', signal: AbortSignal.timeout(10000) });
+        const html = await res.text();
+        const title = readOg(html, 'og:title');
+        const desc = readOg(html, 'og:description');
+        const og = readOg(html, 'og:image');
+        console.log('readPost', JSON.stringify({ ua: headers['User-Agent']?.slice(0, 20) || 'default', status: res.status, final: res.url, titleLen: title.length, descLen: desc.length, hasImg: !!og }));
+        // Threads 有時只有標題、沒有內文
+        const text = desc || (isThreads && title && !/^threads$/i.test(title.trim()) ? title : '');
+        if (!looksBlocked(title, text, og)) return { title, desc: text, image: pickCover(html, og) };
+        // 拿不到內容：可能是轉址頁，找真正的網址再試
+        const next = findRedirect(html, res.url || target);
+        if (!next || next === target) break;
+        console.log('readPost redirect →', next);
+        target = next;
+      } catch (e) { console.error('readPost', e); break; }
+    }
   }
   return null;
 }
@@ -186,7 +233,10 @@ export async function POST(req: NextRequest) {
   if (!ALLOWED.includes(host)) return NextResponse.json({ error: '只支援 Instagram / Threads 連結' }, { status: 400 });
 
   const post = await readPost(url);
-  if (!post) return NextResponse.json({ error: 'IG 暫時擋住讀取，等幾分鐘再按重試；私人帳號的貼文也讀不到' }, { status: 422 });
+  if (!post) {
+    const site = /threads\./i.test(host) ? 'Threads' : 'IG';
+    return NextResponse.json({ error: `讀不到這則 ${site} 貼文，可能暫時被擋住，等幾分鐘再按重試；私人帳號的貼文也讀不到` }, { status: 422 });
+  }
 
   const cover = await saveCover(post.image);
 
