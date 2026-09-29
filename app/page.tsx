@@ -2367,12 +2367,13 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       const cities:any = {}; Object.keys(geo).forEach(c=>{ cities[c]=Object.keys(geo[c]||{}); });
       const res = await fetch('/api/autofill', { method:'POST', headers:{'content-type':'application/json'},
         body: JSON.stringify({ url, country: f.country, countries, cities, types }) });
-      const d = await res.json();
+      let d:any = {};
+      try{ d = await res.json(); }catch(_){ setAf({status:'error', msg:`伺服器錯誤（代碼 ${res.status}），請稍後再試`}); return; }
       if(d.cover || d.caption){
         setPreview({ cover:d.cover||'', caption:d.caption||'' });
         if(d.cover && !(fRef.current.photos||[]).includes(d.cover)){ const n={...fRef.current, photos:[d.cover, ...(fRef.current.photos||[])]}; setF(n); fRef.current=n; }
       }
-      if(!res.ok || d.error){ setAf({status:'error', msg:d.error||'自動填寫失敗'}); return; }
+      if(!res.ok || d.error){ setAf({status:'error', msg:(d.error||'自動填寫失敗')+`（代碼 ${res.status}）`}); return; }
       const fl = d.fields||{};
       const x:any = fRef.current;
       const n:any = {...x};
@@ -2517,7 +2518,9 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
           <div style={{ background:"#fff", borderRadius:16, padding:"12px 16px", marginBottom:12, border:"1px solid rgba(28,27,25,0.08)" }}>
             <div style={{ fontSize:12, color:"#8E8E93", marginBottom:4 }}>Google 地圖找到{cands.length>1?`（${candIdx+1}/${cands.length}）`:''}</div>
             <div style={{ fontSize:15, fontWeight:600, color:"#000" }}>{cand.name}</div>
-            <div style={{ fontSize:13, color:"#6b655c", marginTop:2, marginBottom:10 }}>{cand.address}</div>
+            <div style={{ fontSize:13, color:"#6b655c", marginTop:2, marginBottom:6 }}>{cand.address}</div>
+            <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cand.name)}&query_place_id=${cand.id}`} target="_blank" rel="noreferrer"
+              style={{ display:"inline-block", fontSize:13, color:"#007AFF", textDecoration:"none", marginBottom:10 }}>在地圖上看 ↗</a>
             <div style={{ display:"flex", gap:8, alignItems:"center" }}>
               <button onClick={()=>useCandidate(cand)} disabled={candBusy}
                 style={{ padding:"6px 14px", borderRadius:10, border:"none", background:"#3C3C3C", color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>{candBusy?"填入中…":"用這間"}</button>
