@@ -2363,16 +2363,17 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
     if(!SOCIAL_RE.test(url) || lastUrl.current===url) return;
     lastUrl.current=url;
     setAf({status:'loading', msg:'讀取貼文、上網查資料中…約需 20 秒'});
+    const hadPhotos = (fRef.current.photos||[]).length > 0;
     setCands([]); setCandIdx(0);
     try{
       const geo = geoDataProp||GEO;
       const cities:any = {}; Object.keys(geo).forEach(c=>{ cities[c]=Object.keys(geo[c]||{}); });
       const res = await fetch('/api/autofill', { method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ url, country: f.country, countries, cities, types }) });
+        body: JSON.stringify({ url, country: f.country, countries, cities, types, skipImages: hadPhotos }) });
       let d:any = {};
       try{ d = await res.json(); }catch(_){ setAf({status:'error', msg:`伺服器錯誤（代碼 ${res.status}），請稍後再試`}); return; }
       if(d.cover || d.caption){
-        setPreview({ cover:d.cover||'', caption:d.caption||'', count:(d.images||[]).length } as any);
+        setPreview({ cover: hadPhotos ? fRef.current.photos[0] : (d.cover||''), caption:d.caption||'', count: hadPhotos ? fRef.current.photos.length : (d.images||[]).length } as any);
         const imgs:string[] = (d.images && d.images.length ? d.images : (d.cover ? [d.cover] : []));
         const fresh = imgs.filter((u:string)=>!(fRef.current.photos||[]).includes(u));
         if(fresh.length){ const n={...fRef.current, photos:[...fresh, ...(fRef.current.photos||[])]}; setF(n); fRef.current=n; }
@@ -3381,6 +3382,7 @@ function Notes({ onBack, countries, noteCatsByCountry, onUpdateCats, convertDraf
     if(convertDraft){
       setCountry(convertDraft.country);
       setNewContent(convertDraft.content||"");
+      if(Array.isArray(convertDraft.photos) && convertDraft.photos.length) setNewPhotos(convertDraft.photos);
       setAdding(true);
     }
   },[]);
@@ -4376,6 +4378,11 @@ export default function App() {
 
   // ── 捷徑（方向 A）：開啟 App 時若網址帶 ?inbox=1&country=..&url=..，自動丟進待整理 ──
   const shortcutHandled=useRef(false);
+  // 捷徑在手機上抓好的原圖：?photos=網址1,網址2（只接受自己照片區的網址）
+  function shortcutPhotos(sp:URLSearchParams):string[]{
+    const raw=sp.get('photos')||'';
+    return raw.split(',').map(x=>x.trim()).filter(x=>/^https:\/\/[^/]+\/storage\/v1\/object\/public\/photos\//.test(x)).slice(0,10);
+  }
   useEffect(()=>{
     if(shortcutHandled.current) return;
     shortcutHandled.current=true;
@@ -4387,7 +4394,7 @@ export default function App() {
         let mi=raw.indexOf('&url='); if(mi<0) mi=raw.indexOf('?url=');
         let url = mi>=0 ? raw.slice(mi+5) : '';
         if(url){ try{ url=decodeURIComponent(url); }catch(_){} }
-        setAddInitial({ country: sp.get('country')||'', source_url: url.trim() });
+        setAddInitial({ country: sp.get('country')||'', source_url: url.trim(), photos: shortcutPhotos(sp) });
         setAddConvertInboxId(null);
         setHistory(h=> h[h.length-1]==='add'? h : [...h,'add']);
         try{ window.history.replaceState({},'',window.location.pathname); }catch(_){}
@@ -4401,7 +4408,8 @@ export default function App() {
         if(url){
           const country=sp.get('country')||countries[0]||'韓國';
           const note=sp.get('note')||'';
-          sb.from('inbox_links').insert([{country,url,note}]).select().single()
+          const photos=shortcutPhotos(sp);
+          sb.from('inbox_links').insert([photos.length?{country,url,note,photos}:{country,url,note}]).select().single()
             .then(({data,error})=>{ if(!error&&data) setInbox(xs=>[data,...xs]); else if(error) alert('存入待整理失敗：'+(error.message||'請確認已建立 inbox_links 資料表')); });
           setHistory(h=> h[h.length-1]==='inbox'? h : [...h,'inbox']);
           try{ window.history.replaceState({},'',window.location.pathname); }catch(_){}
@@ -4427,13 +4435,13 @@ export default function App() {
   function openNotes(){ setNotesConvertDraft(null); setHistory(h=>[...h,"notes"]); }
   // 待整理 → 轉成收藏地點（帶入國家＋網址）
   function convertInboxToPlace(it:any){
-    setAddInitial({ country: it.country||"", source_url: it.url });
+    setAddInitial({ country: it.country||"", source_url: it.url, photos: Array.isArray(it.photos)? it.photos : [] });
     setAddConvertInboxId(it.id);
     setHistory(h=>[...h,"add"]);
   }
   // 待整理 → 轉成備忘錄（帶入國家＋內容）
   function convertInboxToNote(it:any){
-    setNotesConvertDraft({ inboxId: it.id, country: it.country, content: (it.note? it.note+"\n":"") + it.url });
+    setNotesConvertDraft({ inboxId: it.id, country: it.country, content: (it.note? it.note+"\n":"") + it.url, photos: Array.isArray(it.photos)? it.photos : [] });
     setHistory(h=>[...h,"notes"]);
   }
 

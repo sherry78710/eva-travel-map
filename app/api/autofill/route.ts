@@ -277,13 +277,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `讀不到這則 ${site} 貼文，可能暫時被擋住，等幾分鐘再按重試；私人帳號的貼文也讀不到` }, { status: 422 });
   }
 
+  // 捷徑已經在手機上抓好原圖時，就不用再抓預覽圖
+  const skipImages = body.skipImages === true;
   // 貼文頁只拿到預覽卡時，改去嵌入頁找原始照片
-  let picked: string[] = post.images || [];
-  if (!picked.length || (picked.length === 1 && picked[0] === post.og)) {
+  let picked: string[] = skipImages ? [] : (post.images || []);
+  if (!skipImages && (!picked.length || (picked.length === 1 && picked[0] === post.og))) {
     const better = await embedImages(url, post.final || '');
     if (better.length) picked = better;
   }
-  console.log('cover final:', picked.length && picked[0] !== post.og ? `embed/html (${picked.length})` : 'og:image');
+  console.log('cover final:', skipImages ? 'skipped (shortcut photos)' : picked.length && picked[0] !== post.og ? `embed/html (${picked.length})` : 'og:image');
   const images = (await Promise.all(picked.map(saveCover))).filter(Boolean);
   const cover = images[0] || '';
 
