@@ -1,5 +1,6 @@
 'use client'
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from '@supabase/supabase-js';
 
 // ── 壓縮圖片：最大寬度 1200px，品質 75% ─────────────────────────────────────
@@ -1233,7 +1234,8 @@ function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCou
 
 // ── Home ──────────────────────────────────────────────────────────────────────
 function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onTrips, onOpenTrip, onCountry, inboxCount=0, onAddNew, onNotes }) {
-  const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
+  const [viewMode, setViewModeRaw] = useState<'list'|'grid'>(loadViewMode);
+  const setViewMode = (v:'list'|'grid') => { setViewModeRaw(v); saveViewMode(v); };
   const byCountry:any = {};
   places.forEach((p:any)=>{ byCountry[p.country]=(byCountry[p.country]||0)+1; });
   const orderedActive = countryOrder.filter(c=>byCountry[c]);
@@ -1328,8 +1330,8 @@ function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onT
         {viewMode==='grid' && (
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, paddingTop:4 }}>
             {places.map((p:any)=>(
-              <button key={p.id} onClick={()=>onNav("detail",p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left" }}>
-                <div style={{ height:110, background:p.photos?.[0]?"none":"#EDE8E2", position:"relative", overflow:"hidden" }}>
+              <button key={p.id} onClick={()=>onNav("detail",p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left", display:"flex", flexDirection:"column", justifyContent:"flex-start", alignItems:"stretch", padding:0 }}>
+                <div style={{ height:110, flexShrink:0, background:p.photos?.[0]?"none":"#EDE8E2", position:"relative", overflow:"hidden" }}>
                   {p.photos?.[0]
                     ? <img src={p.photos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
                     : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>{p.types?.[0]==="餐廳"?"🍽️":p.types?.[0]==="咖啡廳"?"☕":p.types?.[0]==="景點"?"🌸":p.types?.[0]==="市場"?"🛒":"📍"}</div>
@@ -1356,7 +1358,8 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
   const [collapsed, setCollapsed] = useState<any>({});
   const [filterStatus, setFilterStatus] = useState("");
   const [filterCity, setFilterCity] = useState("");
-  const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
+  const [viewMode, setViewModeRaw] = useState<'list'|'grid'>(loadViewMode);
+  const setViewMode = (v:'list'|'grid') => { setViewModeRaw(v); saveViewMode(v); };
   const [showCityOrder, setShowCityOrder] = useState(false);
 
   const list = (places||[]).filter((p:any) => p.country === country);
@@ -1514,8 +1517,8 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
               {!isCollapsed && viewMode==='grid' && (
                 <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
                   {nbPlaces.map((p:any,gi:number)=>(
-                    <button key={p.id+'_'+gi} onClick={()=>onSelect(p._origPlace||p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left" }}>
-                      <div style={{ height:110, background:"#EDE8E2", position:"relative", overflow:"hidden" }}>
+                    <button key={p.id+'_'+gi} onClick={()=>onSelect(p._origPlace||p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left", display:"flex", flexDirection:"column", justifyContent:"flex-start", alignItems:"stretch", padding:0 }}>
+                      <div style={{ height:110, flexShrink:0, background:"#EDE8E2", position:"relative", overflow:"hidden" }}>
                         {p.photos?.[0]
                           ? <img src={p.photos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
                           : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>{p.types?.[0]==="餐廳"?"🍽️":p.types?.[0]==="咖啡廳"?"☕":p.types?.[0]==="景點"?"🌸":p.types?.[0]==="市場"?"🛒":"📍"}</div>
@@ -2335,6 +2338,42 @@ function parseAddress(addr, geoData) {
 
 const SOCIAL_RE = /^https?:\/\/(www\.)?(instagram\.com|threads\.com|threads\.net)\//i;
 
+// ── 清單／圖文格：記住上次的選擇（存在這台手機，首頁和國家頁共用）──────────
+function loadViewMode():'list'|'grid'{ try{ return localStorage.getItem('etm_view_mode')==='grid' ? 'grid' : 'list'; }catch(_){ return 'list'; } }
+function saveViewMode(v:'list'|'grid'){ try{ localStorage.setItem('etm_view_mode', v); }catch(_){} }
+
+// ── 把第 i 張照片移到第一張（第一張＝封面）──────────────────────────────────
+function moveToFront(arr:string[], i:number){ if(i<=0||i>=arr.length) return arr; const a=[...arr]; const [m]=a.splice(i,1); return [m, ...a]; }
+
+// ── 點照片跳出的選單：設為封面／放大看（用 portal 掛到最外層，才不會被頁面捲動影響）──
+function PhotoActionSheet({ photo, isCover, onSetCover, onClose }:any){
+  const [view,setView]=useState(false);
+  if(typeof document==="undefined") return null;
+  const btn:any={ display:"block", width:"100%", padding:"15px 16px", fontSize:16, background:"none", border:"none", cursor:"pointer", textAlign:"center" };
+  const ui = view ? (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:2000, display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <img src={photo} alt="" style={{ maxWidth:"100%", maxHeight:"100%", objectFit:"contain" }} />
+    </div>
+  ) : (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.35)", zIndex:2000, display:"flex", flexDirection:"column", justifyContent:"flex-end", padding:"0 10px calc(env(safe-area-inset-bottom) + 12px)" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"#F2EDE7", borderRadius:16, overflow:"hidden", marginBottom:8 }}>
+        <div style={{ padding:12, display:"flex", justifyContent:"center", borderBottom:"1px solid #E2DBD2" }}>
+          <img src={photo} alt="" style={{ width:96, height:96, objectFit:"cover", borderRadius:10 }} />
+        </div>
+        {isCover
+          ? <div style={{ ...btn, color:"#8E8E93", fontSize:14, cursor:"default", borderBottom:"1px solid #E2DBD2" }}>這張是封面</div>
+          : <button onClick={()=>{ onSetCover(); onClose(); }} style={{ ...btn, color:"#007AFF", borderBottom:"1px solid #E2DBD2" }}>設為封面</button>}
+        <button onClick={()=>setView(true)} style={{ ...btn, color:"#007AFF" }}>放大看</button>
+      </div>
+      <button onClick={onClose} style={{ ...btn, background:"#FDF8F3", borderRadius:16, fontWeight:600, color:"#007AFF" }}>取消</button>
+    </div>
+  );
+  return createPortal(ui, document.body);
+}
+function CoverBadge(){
+  return <span style={{ position:"absolute", left:3, bottom:3, fontSize:10, fontWeight:600, color:"#fff", background:"rgba(0,0,0,0.65)", padding:"1px 5px", borderRadius:5, pointerEvents:"none" }}>封面</span>;
+}
+
 function AutoTag() {
   return <span style={{ marginLeft:6, fontSize:10, fontWeight:600, color:"#185FA5", background:"#E6F1FB", padding:"1px 6px", borderRadius:6, textTransform:"none", letterSpacing:0 }}>自動</span>;
 }
@@ -2419,6 +2458,7 @@ function HighlightsList({ hl, onRemove }:any){
 function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb, initial, convertInboxId, onConverted }:any) {
   const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[],branches:[],google_place_id:"",review_highlights:null, ...(initial||{}) });
   const [recEdit,setRecEdit] = useState(false);
+  const [photoSheet,setPhotoSheet] = useState<number|null>(null);
   const [saving,setSaving] = useState(false);
   const photoInputRef = useRef(null);
   // 自動填寫狀態
@@ -2747,8 +2787,9 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
           <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>照片（選填）</div>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
             {(f.photos||[]).map((photo,i)=>(
-              <div key={i} style={{ position:"relative", width:72, height:72, borderRadius:10, overflow:"hidden", flexShrink:0 }}>
-                <img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+              <div key={i} style={{ position:"relative", width:72, height:72, borderRadius:10, overflow:"hidden", flexShrink:0, outline:(i===0&&(f.photos||[]).length>1)?"2px solid #3C3C3C":"none", outlineOffset:-2 }}>
+                <img src={photo} alt="" onClick={()=>setPhotoSheet(i)} style={{ width:"100%", height:"100%", objectFit:"cover", cursor:"pointer" }} />
+                {i===0 && (f.photos||[]).length>1 && <CoverBadge />}
                 <button onClick={()=>{ set("photos",(f.photos||[]).filter((_,idx)=>idx!==i)); if(preview && photo===preview.cover) setPreview(p=>p?{...p,cover:''}:p); }}
                   style={{ position:"absolute", top:2, right:2, width:18, height:18, borderRadius:"50%", background:"rgba(0,0,0,0.6)", border:"none", color:"white", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
               </div>
@@ -2760,8 +2801,18 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
             </button>
             <input ref={photoInputRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={handlePhotoAdd} />
           </div>
+          {(f.photos||[]).length>1 && <div style={{ fontSize:11, color:"#A69C90", marginTop:8 }}>點照片可以換封面</div>}
         </div>
       </div>
+      {photoSheet!==null && (f.photos||[])[photoSheet] && (
+        <PhotoActionSheet photo={(f.photos||[])[photoSheet]} isCover={photoSheet===0}
+          onClose={()=>setPhotoSheet(null)}
+          onSetCover={()=>{
+            const next = moveToFront(fRef.current.photos||[], photoSheet);
+            set("photos", next);
+            if(preview && preview.cover) setPreview(p=>p?{...p, cover: next[0]}:p);
+          }} />
+      )}
     </div>
   );
 }
@@ -2825,6 +2876,7 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
   const [f, setF] = useState({...place});
   const [lightboxLocal, setLightboxLocal] = useState<{photos:string[],index:number}|null>(null);
   const [addTripOpen, setAddTripOpen] = useState(false);
+  const [photoSheet, setPhotoSheet] = useState<number|null>(null);
   const [addedMsg, setAddedMsg] = useState("");
   const [heroIndex, setHeroIndex] = useState(0);
   const [heroDragOffset, setHeroDragOffset] = useState(0);
@@ -2910,8 +2962,9 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
             <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>照片</div>
             <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:2 }}>
               {(f.photos||[]).map((photo:string, i:number) => (
-                <div key={i} style={{ flexShrink:0, width:100, height:100, borderRadius:10, overflow:"hidden", position:"relative" }}>
-                  <img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                <div key={i} style={{ flexShrink:0, width:100, height:100, borderRadius:10, overflow:"hidden", position:"relative", outline:(i===0&&(f.photos||[]).length>1)?"2px solid #3C3C3C":"none", outlineOffset:-2 }}>
+                  <img src={photo} alt="" onClick={()=>setPhotoSheet(i)} style={{ width:"100%", height:"100%", objectFit:"cover", cursor:"pointer" }} />
+                  {i===0 && (f.photos||[]).length>1 && <CoverBadge />}
                   <button onClick={()=>setF((x:any)=>({...x,photos:x.photos.filter((_:any,idx:number)=>idx!==i)}))}
                     style={{ position:"absolute", top:4, right:4, background:"rgba(0,0,0,0.55)", border:"none", borderRadius:"50%", width:22, height:22, color:"white", fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
                 </div>
@@ -2933,6 +2986,13 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
               </label>
             </div>
           </div>
+
+          {(f.photos||[]).length>1 && <div style={{ fontSize:11, color:"#A69C90", margin:"-4px 2px 12px" }}>點照片可以換封面</div>}
+          {photoSheet!==null && (f.photos||[])[photoSheet] && (
+            <PhotoActionSheet photo={(f.photos||[])[photoSheet]} isCover={photoSheet===0}
+              onClose={()=>setPhotoSheet(null)}
+              onSetCover={()=>setF((x:any)=>({...x, photos: moveToFront(x.photos||[], photoSheet)}))} />
+          )}
 
           <button onClick={()=>{ if(window.confirm("確定刪除？")) onDelete(place.id); }}
             style={{ width:"100%", padding:15, border:"none", borderRadius:14, background:"#FDF8F3", color:"#FF3B30", fontSize:15, fontWeight:600, cursor:"pointer" }}>
@@ -3080,72 +3140,14 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
             <span style={{ fontSize:17, fontWeight:700, color:"#000", lineHeight:1 }}>＋</span>
             <span style={{ fontSize:10, fontWeight:600, color:"#8E8E93", lineHeight:1 }}>行程</span>
           </button>
+          {place.source_url && (()=>{ const src=inboxSource(place.source_url); return (
+            <a href={place.source_url} target="_blank" rel="noreferrer" title={`打開${src.label}`} style={{ width:56, flexShrink:0, background:"#fff", border:"1px solid #EDE8E2", borderRadius:16, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:3, textDecoration:"none" }}>
+              <span style={{ width:22, height:22, borderRadius:6, background:src.bg, color:"#fff", fontSize:13, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>{src.icon}</span>
+              <span style={{ fontSize:10, fontWeight:600, color:"#8E8E93", lineHeight:1 }}>來源</span>
+            </a>
+          ); })()}
         </div>
         {addedMsg && <div style={{ textAlign:"center", fontSize:12, color:"#0F6E56", marginTop:-6, marginBottom:12 }}>{addedMsg}</div>}
-
-        {(place.status==="visited"||place.favorite) && (
-          <ViewReviewCard place={place} onEdit={onEdit} />
-        )}
-
-        {place.opening_hours && <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
-          <div style={{ fontSize:11, color:"#8E8E93", marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>營業時間</div>
-          <div style={{ fontSize:15, color:"#000", lineHeight:1.6, whiteSpace:"pre-line" }}>{place.opening_hours}</div>
-        </div>}
-
-        {place.note && <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
-          <div style={{ fontSize:11, color:"#8E8E93", marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>收藏原因 / 備註</div>
-          <div style={{ fontSize:15, color:"#000", lineHeight:1.5 }}>{place.note}</div>
-        </div>}
-
-        {place.recommendations && (typeof place.recommendations === 'string' ? place.recommendations : (place.recommendations as string[]).join('\n')).trim().length>0 && (
-          <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
-            <div style={{ fontSize:13, color:"#8E8E93", marginBottom:8 }}>推薦品項</div>
-            <RecList value={place.recommendations} />
-          </div>
-        )}
-
-        {normHL(place.review_highlights) && (
-          <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
-            <div style={{ fontSize:13, color:"#8E8E93", marginBottom:6 }}>網友怎麼說</div>
-            <HighlightsList hl={place.review_highlights} />
-          </div>
-        )}
-
-        {place.source_url && (
-          <a href={place.source_url} target="_blank" rel="noreferrer" style={{ display:"block", background:"#fff", borderRadius:16, overflow:"hidden", marginBottom:12, textDecoration:"none", boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
-            <div style={{ display:"flex", alignItems:"stretch" }}>
-              <div style={{ width:80, background:"linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, minHeight:70 }}>
-                <span style={{ fontSize:28 }}>
-                  {place.source_url.includes("instagram") ? "📷" : place.source_url.includes("youtube") ? "▶️" : place.source_url.includes("threads") ? "🧵" : "🔗"}
-                </span>
-              </div>
-              <div style={{ padding:"12px 14px", flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:3 }}>
-                  {place.source_url.includes("instagram") ? "Instagram" : place.source_url.includes("youtube") ? "YouTube" : place.source_url.includes("threads") ? "Threads" : "連結"}
-                </div>
-                <div style={{ fontSize:11, color:"#007AFF", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{place.source_url}</div>
-              </div>
-              <div style={{ display:"flex", alignItems:"center", paddingRight:14 }}>
-                <span style={{ fontSize:16, color:"#C7C7CC" }}>›</span>
-              </div>
-            </div>
-          </a>
-        )}
-
-        {/* Photos — view only, tap to enlarge */}
-        {(place.photos||[]).length > 0 && (
-          <div style={{ background:"#fff", borderRadius:16, padding:"16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
-            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>照片</div>
-            <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:2 }}>
-              {(place.photos||[]).map((photo, i) => (
-                <div key={i} onClick={()=>setLightboxLocal({photos:place.photos, index:i})}
-                  style={{ flexShrink:0, width:120, height:120, borderRadius:10, overflow:"hidden", cursor:"pointer" }}>
-                  <img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {branchLocations(place).map((loc:any, i:number) => {
           const baseName = (place.map_query && place.map_query.trim()) ? place.map_query.trim() : (place.name||"");
@@ -3194,6 +3196,49 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
             </div>
           );
         })}
+        {(place.status==="visited"||place.favorite) && (
+          <ViewReviewCard place={place} onEdit={onEdit} />
+        )}
+
+        {place.opening_hours && <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
+          <div style={{ fontSize:11, color:"#8E8E93", marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>營業時間</div>
+          <div style={{ fontSize:15, color:"#000", lineHeight:1.6, whiteSpace:"pre-line" }}>{place.opening_hours}</div>
+        </div>}
+
+        {place.note && <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
+          <div style={{ fontSize:11, color:"#8E8E93", marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>收藏原因 / 備註</div>
+          <div style={{ fontSize:15, color:"#000", lineHeight:1.5 }}>{place.note}</div>
+        </div>}
+
+        {place.recommendations && (typeof place.recommendations === 'string' ? place.recommendations : (place.recommendations as string[]).join('\n')).trim().length>0 && (
+          <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
+            <div style={{ fontSize:13, color:"#8E8E93", marginBottom:8 }}>推薦品項</div>
+            <RecList value={place.recommendations} />
+          </div>
+        )}
+
+        {normHL(place.review_highlights) && (
+          <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
+            <div style={{ fontSize:13, color:"#8E8E93", marginBottom:6 }}>網友怎麼說</div>
+            <HighlightsList hl={place.review_highlights} />
+          </div>
+        )}
+
+        {/* Photos — view only, tap to enlarge */}
+        {(place.photos||[]).length > 0 && (
+          <div style={{ background:"#fff", borderRadius:16, padding:"16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:10, textTransform:"uppercase", letterSpacing:0.5 }}>照片</div>
+            <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:2 }}>
+              {(place.photos||[]).map((photo, i) => (
+                <div key={i} onClick={()=>setLightboxLocal({photos:place.photos, index:i})}
+                  style={{ flexShrink:0, width:120, height:120, borderRadius:10, overflow:"hidden", cursor:"pointer" }}>
+                  <img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {place.google_place_id && <GooglePhotos placeId={place.google_place_id} onOpen={(ph:string[],i:number)=>setLightboxLocal({photos:ph,index:i})} />}
         </div>
       </div>
