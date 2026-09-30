@@ -672,7 +672,7 @@ function PlaceRow({ place, onClick }) {
     <button onClick={onClick} style={{ width:"100%", display:"flex", alignItems:"center", gap:14, padding:"14px 16px", background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
       {coverPhoto ? (
         <div style={{ width:44, height:44, borderRadius:12, overflow:"hidden", flexShrink:0 }}>
-          <img src={coverPhoto} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+          <img src={coverPhoto} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", ...coverStyle(coverPhoto, place.cover_position) }} />
         </div>
       ) : (
         <PlaceIcon status={place.status} />
@@ -1333,7 +1333,7 @@ function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onT
               <button key={p.id} onClick={()=>onNav("detail",p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left", display:"flex", flexDirection:"column", justifyContent:"flex-start", alignItems:"stretch", padding:0 }}>
                 <div style={{ height:110, flexShrink:0, background:p.photos?.[0]?"none":"#EDE8E2", position:"relative", overflow:"hidden" }}>
                   {p.photos?.[0]
-                    ? <img src={p.photos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                    ? <img src={p.photos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", ...coverStyle(p.photos[0], p.cover_position) }} />
                     : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>{p.types?.[0]==="餐廳"?"🍽️":p.types?.[0]==="咖啡廳"?"☕":p.types?.[0]==="景點"?"🌸":p.types?.[0]==="市場"?"🛒":"📍"}</div>
                   }
                 </div>
@@ -1520,7 +1520,7 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
                     <button key={p.id+'_'+gi} onClick={()=>onSelect(p._origPlace||p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left", display:"flex", flexDirection:"column", justifyContent:"flex-start", alignItems:"stretch", padding:0 }}>
                       <div style={{ height:110, flexShrink:0, background:"#EDE8E2", position:"relative", overflow:"hidden" }}>
                         {p.photos?.[0]
-                          ? <img src={p.photos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                          ? <img src={p.photos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", ...coverStyle(p.photos[0], p.cover_position) }} />
                           : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>{p.types?.[0]==="餐廳"?"🍽️":p.types?.[0]==="咖啡廳"?"☕":p.types?.[0]==="景點"?"🌸":p.types?.[0]==="市場"?"🛒":"📍"}</div>
                         }
                       </div>
@@ -2345,8 +2345,82 @@ function saveViewMode(v:'list'|'grid'){ try{ localStorage.setItem('etm_view_mode
 // ── 把第 i 張照片移到第一張（第一張＝封面）──────────────────────────────────
 function moveToFront(arr:string[], i:number){ if(i<=0||i>=arr.length) return arr; const a=[...arr]; const [m]=a.splice(i,1); return [m, ...a]; }
 
+// ── 封面範圍：{ url, x, y, z }，x/y 是對準的位置（0–100%），z 是放大倍數（1–3）──
+// 記住 url：換了封面之後，舊的範圍就自動不套用
+function clampN(v:any, a:number, b:number, d:number){ const n=Number(v); return isNaN(n) ? d : Math.min(b, Math.max(a, n)); }
+function normPos(pos:any, photos:any){
+  const first = Array.isArray(photos) ? photos[0] : '';
+  if(!pos || !first || pos.url!==first) return null;
+  const x=clampN(pos.x,0,100,50), y=clampN(pos.y,0,100,50), z=clampN(pos.z,1,3,1);
+  if(Math.abs(x-50)<0.5 && Math.abs(y-50)<0.5 && z<1.01) return null;
+  return { url:first, x:Math.round(x*10)/10, y:Math.round(y*10)/10, z:Math.round(z*100)/100 };
+}
+function coverStyle(src:string, pos:any):any{
+  if(!pos || !src || pos.url!==src) return {};
+  const x=clampN(pos.x,0,100,50), y=clampN(pos.y,0,100,50), z=clampN(pos.z,1,3,1);
+  return { objectPosition:`${x}% ${y}%`, transformOrigin:`${x}% ${y}%`, transform: z>1 ? `scale(${z})` : undefined };
+}
+
+// ── 調整封面範圍：單指拖曳移動、雙指或滑桿放大，右邊即時預覽 ─────────────────
+function CoverEditor({ photo, pos, onDone, onClose }:any){
+  const init = (pos && pos.url===photo) ? pos : { x:50, y:50, z:1 };
+  const [v,setV] = useState({ x:clampN(init.x,0,100,50), y:clampN(init.y,0,100,50), z:clampN(init.z,1,3,1) });
+  const vRef = useRef(v); vRef.current = v;
+  const frame = useRef<HTMLDivElement>(null);
+  const g = useRef<any>(null);
+  const cur = { url:photo, ...v };
+  function start(t:any){
+    if(t.length===2) g.current = { mode:'pinch', d0:touchDist(t[0],t[1]) || 1, z0:vRef.current.z };
+    else if(t.length===1) g.current = { mode:'pan', x0:t[0].clientX, y0:t[0].clientY, px:vRef.current.x, py:vRef.current.y };
+  }
+  function move(t:any){
+    const s0=g.current; if(!s0) return;
+    const w = frame.current?.offsetWidth || 300;
+    if(s0.mode==='pinch' && t.length===2){
+      const z = clampN(s0.z0 * touchDist(t[0],t[1]) / s0.d0, 1, 3, 1);
+      setV(q=>({ ...q, z }));
+    } else if(s0.mode==='pan' && t.length===1){
+      const k = 150 / w / vRef.current.z;   // 拖一個框寬 ≈ 移動 150%，放大後移得比較細
+      setV(q=>({ ...q, x:clampN(s0.px - (t[0].clientX-s0.x0)*k, 0,100,50), y:clampN(s0.py - (t[0].clientY-s0.y0)*k, 0,100,50) }));
+    }
+  }
+  if(typeof document==="undefined") return null;
+  const lblS:any={ fontSize:11, color:"rgba(255,255,255,0.6)", marginTop:4, textAlign:"center" };
+  const ui = (
+    <div style={{ position:"fixed", inset:0, background:"#111", zIndex:2100, display:"flex", flexDirection:"column", paddingTop:"env(safe-area-inset-top)", paddingBottom:"calc(env(safe-area-inset-bottom) + 12px)" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 18px" }}>
+        <button onClick={onClose} style={{ background:"none", border:"none", color:"#fff", fontSize:16, cursor:"pointer", padding:0 }}>取消</button>
+        <div style={{ color:"#fff", fontSize:16, fontWeight:600 }}>調整範圍</div>
+        <button onClick={()=>onDone(cur)} style={{ background:"none", border:"none", color:"#FFD60A", fontSize:16, fontWeight:600, cursor:"pointer", padding:0 }}>完成</button>
+      </div>
+      <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"0 20px", gap:14, overflowY:"auto" }}>
+        <div ref={frame}
+          onTouchStart={e=>start(e.touches)} onTouchMove={e=>move(e.touches)}
+          onTouchEnd={e=>{ if(e.touches.length===0) g.current=null; else start(e.touches); }}
+          style={{ width:"min(84vw, 52vh)", aspectRatio:"1/1", borderRadius:14, overflow:"hidden", position:"relative", touchAction:"none", background:"#222" }}>
+          <img src={photo} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", pointerEvents:"none", userSelect:"none", ...coverStyle(photo, cur) }} />
+          <div style={{ position:"absolute", inset:0, pointerEvents:"none", backgroundImage:"linear-gradient(rgba(255,255,255,0.25) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.25) 1px, transparent 1px)", backgroundSize:"33.33% 33.33%" }} />
+        </div>
+        <div style={{ color:"rgba(255,255,255,0.7)", fontSize:12 }}>單指拖曳移動・雙指捏合放大</div>
+        <div style={{ display:"flex", alignItems:"center", gap:10, width:"min(84vw, 52vh)" }}>
+          <span style={{ color:"#fff", fontSize:13 }}>－</span>
+          <input type="range" min={1} max={3} step={0.05} value={v.z} onChange={e=>setV(q=>({ ...q, z:Number(e.target.value) }))} style={{ flex:1 }} />
+          <span style={{ color:"#fff", fontSize:13 }}>＋</span>
+        </div>
+        <div style={{ display:"flex", alignItems:"flex-end", gap:14 }}>
+          <div><div style={{ width:148, height:100, borderRadius:8, overflow:"hidden" }}><img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", ...coverStyle(photo, cur) }} /></div><div style={lblS}>首頁圖文格</div></div>
+          <div><div style={{ width:72, height:72, borderRadius:8, overflow:"hidden" }}><img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", ...coverStyle(photo, cur) }} /></div><div style={lblS}>詳細頁</div></div>
+          <div><div style={{ width:44, height:44, borderRadius:10, overflow:"hidden" }}><img src={photo} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", ...coverStyle(photo, cur) }} /></div><div style={lblS}>清單</div></div>
+        </div>
+        <button onClick={()=>setV({ x:50, y:50, z:1 })} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", fontSize:14, borderRadius:10, padding:"8px 18px", cursor:"pointer" }}>重設</button>
+      </div>
+    </div>
+  );
+  return createPortal(ui, document.body);
+}
+
 // ── 點照片跳出的選單：設為封面／放大看（用 portal 掛到最外層，才不會被頁面捲動影響）──
-function PhotoActionSheet({ photo, isCover, onSetCover, onClose }:any){
+function PhotoActionSheet({ photo, isCover, onSetCover, onAdjust, onClose }:any){
   const [view,setView]=useState(false);
   if(typeof document==="undefined") return null;
   const btn:any={ display:"block", width:"100%", padding:"15px 16px", fontSize:16, background:"none", border:"none", cursor:"pointer", textAlign:"center" };
@@ -2361,7 +2435,9 @@ function PhotoActionSheet({ photo, isCover, onSetCover, onClose }:any){
           <img src={photo} alt="" style={{ width:96, height:96, objectFit:"cover", borderRadius:10 }} />
         </div>
         {isCover
-          ? <div style={{ ...btn, color:"#8E8E93", fontSize:14, cursor:"default", borderBottom:"1px solid #E2DBD2" }}>這張是封面</div>
+          ? (onAdjust
+              ? <button onClick={()=>{ onClose(); onAdjust(); }} style={{ ...btn, color:"#007AFF", borderBottom:"1px solid #E2DBD2" }}>調整封面範圍</button>
+              : <div style={{ ...btn, color:"#8E8E93", fontSize:14, cursor:"default", borderBottom:"1px solid #E2DBD2" }}>這張是封面</div>)
           : <button onClick={()=>{ onSetCover(); onClose(); }} style={{ ...btn, color:"#007AFF", borderBottom:"1px solid #E2DBD2" }}>設為封面</button>}
         <button onClick={()=>setView(true)} style={{ ...btn, color:"#007AFF" }}>放大看</button>
       </div>
@@ -2456,9 +2532,10 @@ function HighlightsList({ hl, onRemove }:any){
 }
 
 function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb, initial, convertInboxId, onConverted }:any) {
-  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[],branches:[],google_place_id:"",review_highlights:null, ...(initial||{}) });
+  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[],branches:[],google_place_id:"",review_highlights:null,cover_position:null, ...(initial||{}) });
   const [recEdit,setRecEdit] = useState(false);
   const [photoSheet,setPhotoSheet] = useState<number|null>(null);
+  const [coverEdit,setCoverEdit] = useState(false);
   const [saving,setSaving] = useState(false);
   const photoInputRef = useRef(null);
   // 自動填寫狀態
@@ -2788,7 +2865,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
           <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
             {(f.photos||[]).map((photo,i)=>(
               <div key={i} style={{ position:"relative", width:72, height:72, borderRadius:10, overflow:"hidden", flexShrink:0, outline:(i===0&&(f.photos||[]).length>1)?"2px solid #3C3C3C":"none", outlineOffset:-2 }}>
-                <img src={photo} alt="" onClick={()=>setPhotoSheet(i)} style={{ width:"100%", height:"100%", objectFit:"cover", cursor:"pointer" }} />
+                <img src={photo} alt="" onClick={()=>setPhotoSheet(i)} style={{ width:"100%", height:"100%", objectFit:"cover", cursor:"pointer", ...(i===0 ? coverStyle(photo, (f as any).cover_position) : {}) }} />
                 {i===0 && (f.photos||[]).length>1 && <CoverBadge />}
                 <button onClick={()=>{ set("photos",(f.photos||[]).filter((_,idx)=>idx!==i)); if(preview && photo===preview.cover) setPreview(p=>p?{...p,cover:''}:p); }}
                   style={{ position:"absolute", top:2, right:2, width:18, height:18, borderRadius:"50%", background:"rgba(0,0,0,0.6)", border:"none", color:"white", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
@@ -2801,17 +2878,23 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
             </button>
             <input ref={photoInputRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={handlePhotoAdd} />
           </div>
-          {(f.photos||[]).length>1 && <div style={{ fontSize:11, color:"#A69C90", marginTop:8 }}>點照片可以換封面</div>}
+          {(f.photos||[]).length>0 && <div style={{ fontSize:11, color:"#A69C90", marginTop:8 }}>點照片可以換封面、調整封面範圍</div>}
         </div>
       </div>
       {photoSheet!==null && (f.photos||[])[photoSheet] && (
         <PhotoActionSheet photo={(f.photos||[])[photoSheet]} isCover={photoSheet===0}
           onClose={()=>setPhotoSheet(null)}
+          onAdjust={()=>setCoverEdit(true)}
           onSetCover={()=>{
             const next = moveToFront(fRef.current.photos||[], photoSheet);
             set("photos", next);
             if(preview && preview.cover) setPreview(p=>p?{...p, cover: next[0]}:p);
           }} />
+      )}
+      {coverEdit && (f.photos||[])[0] && (
+        <CoverEditor photo={(f.photos||[])[0]} pos={(f as any).cover_position}
+          onClose={()=>setCoverEdit(false)}
+          onDone={(pos:any)=>{ set("cover_position", normPos(pos, fRef.current.photos)); setCoverEdit(false); }} />
       )}
     </div>
   );
@@ -2877,6 +2960,7 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
   const [lightboxLocal, setLightboxLocal] = useState<{photos:string[],index:number}|null>(null);
   const [addTripOpen, setAddTripOpen] = useState(false);
   const [photoSheet, setPhotoSheet] = useState<number|null>(null);
+  const [coverEdit, setCoverEdit] = useState(false);
   const [addedMsg, setAddedMsg] = useState("");
   const [heroIndex, setHeroIndex] = useState(0);
   const [heroDragOffset, setHeroDragOffset] = useState(0);
@@ -2963,7 +3047,7 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
             <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:2 }}>
               {(f.photos||[]).map((photo:string, i:number) => (
                 <div key={i} style={{ flexShrink:0, width:100, height:100, borderRadius:10, overflow:"hidden", position:"relative", outline:(i===0&&(f.photos||[]).length>1)?"2px solid #3C3C3C":"none", outlineOffset:-2 }}>
-                  <img src={photo} alt="" onClick={()=>setPhotoSheet(i)} style={{ width:"100%", height:"100%", objectFit:"cover", cursor:"pointer" }} />
+                  <img src={photo} alt="" onClick={()=>setPhotoSheet(i)} style={{ width:"100%", height:"100%", objectFit:"cover", cursor:"pointer", ...(i===0 ? coverStyle(photo, (f as any).cover_position) : {}) }} />
                   {i===0 && (f.photos||[]).length>1 && <CoverBadge />}
                   <button onClick={()=>setF((x:any)=>({...x,photos:x.photos.filter((_:any,idx:number)=>idx!==i)}))}
                     style={{ position:"absolute", top:4, right:4, background:"rgba(0,0,0,0.55)", border:"none", borderRadius:"50%", width:22, height:22, color:"white", fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
@@ -2987,11 +3071,17 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
             </div>
           </div>
 
-          {(f.photos||[]).length>1 && <div style={{ fontSize:11, color:"#A69C90", margin:"-4px 2px 12px" }}>點照片可以換封面</div>}
+          {(f.photos||[]).length>0 && <div style={{ fontSize:11, color:"#A69C90", margin:"-4px 2px 12px" }}>點照片可以換封面、調整封面範圍</div>}
           {photoSheet!==null && (f.photos||[])[photoSheet] && (
             <PhotoActionSheet photo={(f.photos||[])[photoSheet]} isCover={photoSheet===0}
               onClose={()=>setPhotoSheet(null)}
+              onAdjust={()=>setCoverEdit(true)}
               onSetCover={()=>setF((x:any)=>({...x, photos: moveToFront(x.photos||[], photoSheet)}))} />
+          )}
+          {coverEdit && (f.photos||[])[0] && (
+            <CoverEditor photo={(f.photos||[])[0]} pos={(f as any).cover_position}
+              onClose={()=>setCoverEdit(false)}
+              onDone={(pos:any)=>{ setF((x:any)=>({...x, cover_position: normPos(pos, x.photos)})); setCoverEdit(false); }} />
           )}
 
           <button onClick={()=>{ if(window.confirm("確定刪除？")) onDelete(place.id); }}
@@ -3093,8 +3183,8 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
               {place.photos.map((photo:string, i:number) => (
                 <div key={i}
                   onClick={()=>{ if(heroWasDragged.current){ heroWasDragged.current=false; return; } setLightboxLocal({photos:place.photos, index:i}); }}
-                  style={{ flex:"0 0 100%", width:"100%", height:"100%", position:"relative", cursor:"pointer" }}>
-                  <img src={photo} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", pointerEvents:"none" }} />
+                  style={{ flex:"0 0 100%", width:"100%", height:"100%", position:"relative", cursor:"pointer", overflow:"hidden" }}>
+                  <img src={photo} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", pointerEvents:"none", ...coverStyle(photo, place.cover_position) }} />
                   <div style={{ position:"absolute", inset:0, background:"linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.55) 100%)" }} />
                 </div>
               ))}
@@ -4217,7 +4307,7 @@ function TripPlacePicker({ places, trip, dayDate, onClose, onConfirm }:any){
               <button key={p.id} onClick={()=>toggle(String(p.id))} style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 14px', background:'none', border:'none', borderBottom:i<list.length-1?'1px solid #EDE8E2':'none', cursor:'pointer', textAlign:'left' }}>
                 <div style={{ width:22, height:22, borderRadius:'50%', flexShrink:0, border:on?'none':'1.5px solid #C9C4BE', background:on?'#000':'none', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13 }}>{on?'✓':''}</div>
                 {cover ? (
-                  <div style={{ width:42, height:42, borderRadius:9, overflow:'hidden', flexShrink:0 }}><img src={cover} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /></div>
+                  <div style={{ width:42, height:42, borderRadius:9, overflow:'hidden', flexShrink:0 }}><img src={cover} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', ...coverStyle(cover, p.cover_position) }} /></div>
                 ) : (
                   <div style={{ width:42, height:42, borderRadius:9, background:STATUS_CFG[p.status]?.iconBg||'#EDE8E2', color:STATUS_CFG[p.status]?.iconColor||'#3C3C43', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>{STATUS_CFG[p.status]?.mark||'○'}</div>
                 )}
@@ -4364,7 +4454,7 @@ function TripDetail({ trip, places, onBack, onSaveDays, onEditTrip, onOpenPlace 
                 <div style={{ background:'#FDF8F3', borderRadius:12, padding:'11px 12px', display:'flex', alignItems:'flex-start', gap:10 }}>
                   <div onClick={()=> isPlace ? onOpenPlace(resolved) : openEdit(it,idx) } style={{ flex:1, minWidth:0, textAlign:'left', cursor:'pointer', display:'flex', gap:11, alignItems:'flex-start' }}>
                     {isPlace && (cover ? (
-                      <div style={{ width:42, height:42, borderRadius:9, overflow:'hidden', flexShrink:0 }}><img src={cover} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /></div>
+                      <div style={{ width:42, height:42, borderRadius:9, overflow:'hidden', flexShrink:0 }}><img src={cover} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', ...coverStyle(cover, resolved.cover_position) }} /></div>
                     ) : (
                       <div style={{ width:42, height:42, borderRadius:9, background:STATUS_CFG[resolved.status]?.iconBg||'#EDE8E2', color:STATUS_CFG[resolved.status]?.iconColor||'#3C3C43', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>{STATUS_CFG[resolved.status]?.mark||'○'}</div>
                     ))}
@@ -4728,6 +4818,7 @@ export default function App() {
       branches:p.branches||[],
       google_place_id:p.google_place_id||null,
       review_highlights: normHL(p.review_highlights),
+      cover_position: normPos(p.cover_position, p.photos),
     };
     const {data,error}=await sb.from('places').insert([payload]).select().single();
     if(!error&&data) setPlaces(ps=>[{...data, map_query:data.summary||'', branches:data.branches||[]},...ps]);
@@ -4759,6 +4850,7 @@ export default function App() {
       status:u.status, favorite:u.favorite||false, summary:u.map_query||'', tags:u.tags||[],
       branches:u.branches||[],
       review_highlights: normHL(u.review_highlights),
+      cover_position: normPos(u.cover_position, u.photos),
     }).eq('id',u.id);
     if(!error){ setPlaces(ps=>ps.map(p=>p.id===u.id?u:p)); setSelected(u); }
     else { console.error('handleEdit error:', error); alert('儲存失敗：' + (error?.message || JSON.stringify(error))); }
