@@ -2339,8 +2339,86 @@ function AutoTag() {
   return <span style={{ marginLeft:6, fontSize:10, fontWeight:600, color:"#185FA5", background:"#E6F1FB", padding:"1px 6px", borderRadius:6, textTransform:"none", letterSpacing:0 }}>自動</span>;
 }
 
+// ── 會跟著字數自動長高的輸入框（收藏原因用）─────────────────────────────────
+function AutoGrowTextarea({ value, onChange, placeholder, style, onFocus }:any){
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(()=>{ const el=ref.current; if(!el) return; el.style.height="auto"; el.style.height=el.scrollHeight+"px"; },[value]);
+  return <textarea ref={ref} rows={1} value={value} onChange={onChange} onFocus={onFocus} placeholder={placeholder}
+    style={{ width:"100%", border:"none", outline:"none", background:"none", fontFamily:"inherit", resize:"none", overflow:"hidden", lineHeight:1.5, display:"block", padding:0, ...style }} />;
+}
+
+// ── 推薦品項：每行一項，格式「原文｜繁中翻譯｜說明｜來源」；舊資料（沒有｜）照原樣顯示 ──
+function parseRec(line:string){
+  const s=(line||"").trim();
+  if(s.includes("｜")){ const [name="",zh="",desc="",src=""]=s.split("｜").map(x=>x.trim()); return { name, zh, desc, src }; }
+  const m=s.match(/^(.*?)（網路推薦）$/);
+  if(m) return { name:m[1].trim(), zh:"", desc:"", src:"網路" };
+  return { name:s, zh:"", desc:"", src:"" };
+}
+function recLines(v:any):string[]{
+  return (typeof v==="string" ? v.split("\n") : (v||[])).map((x:string)=>(x||"").trim()).filter(Boolean);
+}
+// AI 回傳的推薦品項 → 存檔用的文字行
+function recLinesFromAI(fl:any):string[]{
+  const out:string[]=[];
+  const clean=(x:any)=>String(x||"").replace(/[｜\n]/g," ").trim();
+  const push=(r:any, def:string)=>{
+    if(!r) return;
+    if(typeof r==="string"){ out.push(def==="網路" ? `${clean(r)}（網路推薦）` : clean(r)); return; }
+    const name=clean(r.name); if(!name) return;
+    let zh=clean(r.zh); if(zh===name) zh="";
+    const src = (r.source==="web"||r.source==="網路") ? "網路" : (r.source==="post"||r.source==="貼文") ? "貼文" : def;
+    out.push([name, zh, clean(r.desc), src].join("｜"));
+  };
+  (Array.isArray(fl.recommendations)?fl.recommendations:[fl.recommendations]).forEach((r:any)=>push(r,"貼文"));
+  (Array.isArray(fl.recommendations_web)?fl.recommendations_web:[]).forEach((r:any)=>push(r,"網路"));
+  return out;
+}
+function RecList({ value }:any){
+  const items=recLines(value).map(parseRec);
+  return (
+    <div>
+      {items.map((r,i)=>(
+        <div key={i} style={{ paddingTop:i?10:0, marginTop:i?10:0, borderTop:i?"1px solid #EDE8E2":"none" }}>
+          <div style={{ fontSize:15, color:"#000", lineHeight:1.45 }}>{r.name}</div>
+          {(r.zh||r.desc) && <div style={{ fontSize:13, color:"#6b655c", lineHeight:1.5, marginTop:2 }}>{[r.zh, r.desc].filter(Boolean).join("・")}</div>}
+          {r.src && <div style={{ fontSize:11, color:"#A69C90", marginTop:2 }}>{r.src==="網路"?"網路推薦":r.src==="貼文"?"貼文推薦":r.src}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── 網友怎麼說：{ good:[{text,src}], caution:[{text,src}] } ───────────────────
+function normHL(x:any){
+  if(!x || typeof x!=="object") return null;
+  const fix=(arr:any)=>(Array.isArray(arr)?arr:[]).map((it:any)=> typeof it==="string" ? { text:it.trim(), src:[] } : { text:String(it?.text||"").trim(), src:(Array.isArray(it?.src)?it.src:[]).filter((v:any)=>typeof v==="string") }).filter((it:any)=>it.text);
+  const good=fix(x.good), caution=fix(x.caution);
+  return (good.length||caution.length) ? { good, caution } : null;
+}
+function HighlightsList({ hl, onRemove }:any){
+  const h=normHL(hl); if(!h) return null;
+  const Pill=({t}:any)=><span style={{ fontSize:10.5, padding:"1px 6px", borderRadius:6, background:"#F5F0EB", color:"#8E8E93", marginLeft:4, whiteSpace:"nowrap" }}>{t}</span>;
+  const Row=({it, kind, i}:any)=>(
+    <div style={{ display:"flex", alignItems:"flex-start", gap:6, fontSize:14, color:"#000", lineHeight:1.55, marginTop:4 }}>
+      <span style={{ color:"#C7C7CC", flexShrink:0 }}>・</span>
+      <span style={{ flex:1, minWidth:0 }}>{it.text}{(it.src||[]).map((t:string)=><Pill key={t} t={t} />)}</span>
+      {onRemove && <button onClick={()=>onRemove(kind,i)} aria-label="刪除這條" style={{ background:"none", border:"none", color:"#C7C7CC", fontSize:15, cursor:"pointer", padding:"0 2px", lineHeight:1.4, flexShrink:0 }}>×</button>}
+    </div>
+  );
+  return (
+    <div>
+      {h.good.length>0 && <div style={{ fontSize:12, fontWeight:600, color:"#0F6E56", marginTop:2 }}>好評</div>}
+      {h.good.map((it:any,i:number)=><Row key={"g"+i} it={it} kind="good" i={i} />)}
+      {h.caution.length>0 && <div style={{ fontSize:12, fontWeight:600, color:"#854F0B", marginTop:h.good.length?10:2 }}>注意</div>}
+      {h.caution.map((it:any,i:number)=><Row key={"c"+i} it={it} kind="caution" i={i} />)}
+    </div>
+  );
+}
+
 function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb, initial, convertInboxId, onConverted }:any) {
-  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[],branches:[],google_place_id:"", ...(initial||{}) });
+  const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[],branches:[],google_place_id:"",review_highlights:null, ...(initial||{}) });
+  const [recEdit,setRecEdit] = useState(false);
   const [saving,setSaving] = useState(false);
   const photoInputRef = useRef(null);
   // 自動填寫狀態
@@ -2362,14 +2440,17 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
   async function runAutofill(url:string){
     if(!SOCIAL_RE.test(url) || lastUrl.current===url) return;
     lastUrl.current=url;
-    setAf({status:'loading', msg:'讀取貼文、上網查資料中…約需 20 秒'});
+    setAf({status:'loading', msg:'讀取貼文、上網查資料中…約需 30 秒'});
     const hadPhotos = (fRef.current.photos||[]).length > 0;
     setCands([]); setCandIdx(0);
     try{
       const geo = geoDataProp||GEO;
       const cities:any = {}; Object.keys(geo).forEach(c=>{ cities[c]=Object.keys(geo[c]||{}); });
+      // 已選國家時，把該國各城市的商圈清單給 AI 挑（沒選國家就讓 AI 自己寫）
+      const areas:any = {}; const ac = fRef.current.country;
+      if(ac && geo[ac]) Object.entries(geo[ac]).forEach(([city,dists]:any)=>{ areas[city]=Array.from(new Set(Object.values(dists||{}).flat())); });
       const res = await fetch('/api/autofill', { method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ url, country: f.country, countries, cities, types, skipImages: hadPhotos }) });
+        body: JSON.stringify({ url, country: fRef.current.country, countries, cities, areas, types, skipImages: hadPhotos }) });
       let d:any = {};
       try{ d = await res.json(); }catch(_){ setAf({status:'error', msg:`伺服器錯誤（代碼 ${res.status}），請稍後再試`}); return; }
       if(d.cover || d.caption){
@@ -2387,12 +2468,15 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       put('name', fl.name);
       put('map_query', fl.map_query);
       put('note', fl.note);
-      const recPost = (Array.isArray(fl.recommendations) ? fl.recommendations : [fl.recommendations]).filter(Boolean);
-      const recWeb = (Array.isArray(fl.recommendations_web) ? fl.recommendations_web : []).filter(Boolean).map((r:string)=>`${r}（網路推薦）`);
-      put('recommendations', [...recPost, ...recWeb].join('\n'));
+      put('recommendations', recLinesFromAI(fl).join('\n'));
       put('types', (fl.types||[]).filter((t:string)=>types.includes(t)));
       if(!x.country && countries.includes(fl.country)){ n.country=fl.country; if(fl.city) n.city=fl.city; }
       else if(x.country===fl.country && !x.city && fl.city){ n.city=fl.city; }
+      // 商圈：AI 優先（選了「用這間」之後，AI 沒填到才用 Google 的）
+      const nb = String(fl.neighborhood||'').trim();
+      if(nb && !x.neighborhood && (!fl.country || fl.country===n.country)){ n.neighborhood=nb; filled.push('neighborhood'); }
+      const hl = normHL(fl.highlights);
+      if(hl && !normHL(x.review_highlights)){ n.review_highlights=hl; filled.push('review_highlights'); }
       setF(n); fRef.current=n;
       setAutoKeys(ks=>Array.from(new Set([...ks, ...filled])));
       setCands(d.candidates||[]); setGuess(fl.confidence==='low');
@@ -2428,7 +2512,9 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
     if(candBusy) return;
     setCandBusy(true);
     try{
-      const res = await fetch(`/api/place-details?id=${encodeURIComponent(c.id)}&country=${encodeURIComponent(f.country||'')}`);
+      const cur:any = fRef.current;
+      const res = await fetch('/api/place-details', { method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ id:c.id, country: cur.country||'', name: cur.name||c.name||'', hints: normHL(cur.review_highlights) }) });
       const d = await res.json();
       if(!res.ok || d.error){ alert(d.error||'查詢失敗'); return; }
       const addr = d.address || c.address || '';
@@ -2437,8 +2523,19 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       const n:any = {...x, google_place_id:c.id};
       const filled:string[] = [];
       if(addr){ n.address=addr; filled.push('address');
-        if(parsed){ ['country','city','district','neighborhood'].forEach(k=>{ if((parsed as any)[k]) n[k]=(parsed as any)[k]; }); } }
+        if(parsed){
+          const cityChanged = !!(parsed.city && x.city && parsed.city!==x.city);
+          ['country','city','district'].forEach(k=>{ if((parsed as any)[k]) n[k]=(parsed as any)[k]; });
+          // 商圈：AI 已填就保留；城市不一樣代表 AI 猜錯，改用地址的
+          if(parsed.neighborhood && (!x.neighborhood || cityChanged)) n.neighborhood=parsed.neighborhood;
+          else if(cityChanged) n.neighborhood='';
+        } }
+      // 還是沒有商圈 → 用 Google 的區域名（例：白金），和行政區同名就不用
+      if(!String(n.neighborhood||'').trim() && d.area && d.area!==n.district && d.area!==n.city){ n.neighborhood=d.area; filled.push('neighborhood'); }
       if(d.opening_hours && !String(x.opening_hours||'').trim()){ n.opening_hours=d.opening_hours; filled.push('opening_hours'); }
+      const hl2 = normHL(d.highlights);
+      if(hl2){ n.review_highlights=hl2; filled.push('review_highlights'); }
+      if(d.summaryNote) setAf({status:'done', msg:d.summaryNote});
       setF(n); fRef.current=n;
       setAutoKeys(ks=>Array.from(new Set([...ks, ...filled])));
       setCands([]);
@@ -2587,7 +2684,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
           </div>
           <div style={{ padding:"14px 16px", borderBottom:"1px solid #EDE8E2" }}>
             <div style={lbl}>收藏原因{isAuto('note')&&<AutoTag/>}</div>
-            <input value={f.note} onChange={e=>set("note",e.target.value)} placeholder="" style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
+            <AutoGrowTextarea value={f.note} onChange={(e:any)=>set("note",e.target.value)} style={{ fontSize:16, color:"#000" }} />
           </div>
           <div style={{ padding:"14px 16px" }}>
             <div style={lbl}>營業時間 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 選填</span>{isAuto('opening_hours')&&<AutoTag/>}</div>
@@ -2619,11 +2716,31 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
 
         <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
           <div style={{ padding:"14px 16px" }}>
-            <div style={lbl}>推薦品項{isAuto('recommendations')&&<AutoTag/>}</div>
-            <textarea value={f.recommendations as string} onChange={e=>set("recommendations", e.target.value)} placeholder="" rows={3}
-              style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6 }} />
+            <div style={{ ...lbl, display:"flex", alignItems:"center" }}>
+              <span style={{ flex:1 }}>推薦品項{isAuto('recommendations')&&<AutoTag/>}</span>
+              {recLines(f.recommendations).length>0 && <button onClick={()=>setRecEdit(v=>!v)} style={{ background:"none", border:"none", color:"#007AFF", fontSize:13, cursor:"pointer", padding:0, textTransform:"none", letterSpacing:0 }}>{recEdit?"完成":"編輯"}</button>}
+            </div>
+            {(!recEdit && recLines(f.recommendations).length>0) ? (
+              <div style={{ marginTop:4 }}><RecList value={f.recommendations} /></div>
+            ) : (<>
+              <AutoGrowTextarea value={f.recommendations as string} onChange={(e:any)=>set("recommendations", e.target.value)} onFocus={()=>setRecEdit(true)} placeholder="每行一項" style={{ fontSize:15, color:"#000", lineHeight:1.6, minHeight:48 }} />
+              <div style={{ fontSize:11, color:"#A69C90", marginTop:6, lineHeight:1.5 }}>格式：原文｜繁中翻譯｜說明｜來源（只寫品名也可以）</div>
+            </>)}
           </div>
         </div>
+
+        {normHL(f.review_highlights) && (
+          <div style={{ background:"#FDF8F3", borderRadius:16, overflow:"hidden", marginBottom:12 }}>
+            <div style={{ padding:"14px 16px" }}>
+              <div style={lbl}>網友怎麼說{isAuto('review_highlights')&&<AutoTag/>}</div>
+              <HighlightsList hl={f.review_highlights} onRemove={(kind:string,i:number)=>{
+                const h:any = normHL(fRef.current.review_highlights); if(!h) return;
+                h[kind] = h[kind].filter((_:any,idx:number)=>idx!==i);
+                set("review_highlights", normHL(h));
+              }} />
+            </div>
+          </div>
+        )}
 
         {/* 照片上傳（最底）*/}
         <div style={{ background:"#FDF8F3", borderRadius:16, padding:16, marginBottom:12 }}>
@@ -2743,7 +2860,7 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
             </div>
             <div style={{ padding:"14px 16px" }}>
               <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>收藏原因 / 備註</div>
-              <input value={f.note||""} onChange={e=>setF(x=>({...x,note:e.target.value}))} style={{ width:"100%", border:"none", outline:"none", fontSize:16, color:"#000", background:"none", fontFamily:"inherit" }} />
+              <AutoGrowTextarea value={f.note||""} onChange={(e:any)=>setF((x:any)=>({...x,note:e.target.value}))} style={{ fontSize:16, color:"#000" }} />
             </div>
           </div>
 
@@ -2983,9 +3100,14 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
         {place.recommendations && (typeof place.recommendations === 'string' ? place.recommendations : (place.recommendations as string[]).join('\n')).trim().length>0 && (
           <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
             <div style={{ fontSize:13, color:"#8E8E93", marginBottom:8 }}>推薦品項</div>
-            <div style={{ fontSize:15, color:"#000", lineHeight:1.7, whiteSpace:"pre-line" }}>
-              {typeof place.recommendations === 'string' ? place.recommendations : (place.recommendations as string[]).join('\n')}
-            </div>
+            <RecList value={place.recommendations} />
+          </div>
+        )}
+
+        {normHL(place.review_highlights) && (
+          <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
+            <div style={{ fontSize:13, color:"#8E8E93", marginBottom:6 }}>網友怎麼說</div>
+            <HighlightsList hl={place.review_highlights} />
           </div>
         )}
 
@@ -4560,6 +4682,7 @@ export default function App() {
       rating:0, review:'', summary:p.map_query||'', tags:[], photos:p.photos||[],
       branches:p.branches||[],
       google_place_id:p.google_place_id||null,
+      review_highlights: normHL(p.review_highlights),
     };
     const {data,error}=await sb.from('places').insert([payload]).select().single();
     if(!error&&data) setPlaces(ps=>[{...data, map_query:data.summary||'', branches:data.branches||[]},...ps]);
@@ -4590,6 +4713,7 @@ export default function App() {
       rating:u.rating||0, review:u.review||'', photos:u.photos||[],
       status:u.status, favorite:u.favorite||false, summary:u.map_query||'', tags:u.tags||[],
       branches:u.branches||[],
+      review_highlights: normHL(u.review_highlights),
     }).eq('id',u.id);
     if(!error){ setPlaces(ps=>ps.map(p=>p.id===u.id?u:p)); setSelected(u); }
     else { console.error('handleEdit error:', error); alert('儲存失敗：' + (error?.message || JSON.stringify(error))); }

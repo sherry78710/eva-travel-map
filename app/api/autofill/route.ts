@@ -183,13 +183,31 @@ function langFor(country: string) {
   return 'en';
 }
 
+// 類型定義：避免「豬排」被分到「燒肉、烤肉」這種錯誤。只列出使用者目前有的類型
+const TYPE_HINTS: Record<string, string> = {
+  '餐廳': '所有吃正餐的店都要選（大類）',
+  '燒肉、烤肉': '客人在桌邊自己烤肉的店（韓式烤肉、日式燒肉）。炸豬排、串燒、牛排、烤雞都不算',
+  '火鍋/壽喜燒': '火鍋、涮涮鍋、壽喜燒、部隊鍋等鍋物',
+  '早午餐/咖啡廳': '以咖啡、飲品、早午餐為主的店',
+  '咖啡廳': '以咖啡、飲品為主的店',
+  '甜點/麵包店': '甜點、蛋糕、麵包、冰品為主的店',
+  '購物': '服飾、雜貨、選物店等商店',
+  '景點': '觀光景點、公園、寺廟、展覽',
+  '市場': '傳統市場、夜市',
+  '百貨': '百貨公司、大型購物中心',
+  '飯店': '住宿',
+  '住宿': '住宿',
+  '酒吧': '以喝酒為主的店',
+};
+
 async function askClaude(post: { title: string; desc: string }, ctx: any) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error('缺少 ANTHROPIC_API_KEY');
+  const typeRules = (ctx.types || []).filter((t: string) => TYPE_HINTS[t]).map((t: string) => `- ${t}：${TYPE_HINTS[t]}`).join('\n');
   const system = `你是旅遊美食收藏助理。使用者給你一則 IG 或 Threads 貼文，請找出貼文介紹的「一間」店家（有多間時取最主要那間）。
 步驟：
-1. 先讀貼文，推測店名、城市。
-2. 一定要用 web_search 上網搜尋（例如「店名 城市」），確認正式店名、分店、所在地區，並找出網路上常被推薦的必點品項。貼文資訊很少時，用貼文裡的線索（暱稱、菜色、地區）去找出真正的店。
+1. 先讀貼文，推測店名、城市、商圈。
+2. 一定要用 web_search 上網搜尋（例如「店名 城市」「店名 評價」「店名 必點」），確認正式店名、分店、所在商圈，找出菜單上的具體品名，並看看網路上的評價（部落格、Tabelog、Naver 等）大家常提到什麼優點和要注意的地方。貼文資訊很少時，用貼文裡的線索（暱稱、菜色、地區）去找出真正的店。
 3. 最後只輸出一個 JSON 物件，不要任何其他文字、不要 Markdown：
 {
  "is_place": true/false（是否在介紹實體店家或景點）,
@@ -198,15 +216,28 @@ async function askClaude(post: { title: string; desc: string }, ctx: any) {
  "search_query": "在 Google 地圖最可能找到這間店的字串：當地語言正式店名 + 分店或地區",
  "country": "必須是 countries 清單中的一個，無法判斷就空字串",
  "city": "優先使用 cities 清單中的名稱，無法判斷就空字串",
+ "neighborhood": "商圈（例：白金高輪、弘大、中山）。優先從 areas 裡該城市的清單挑；清單沒有合適的，就填當地人常用的商圈或最近車站名，用繁體中文；判斷不出來就空字串",
  "types": ["只能從 types 清單挑，0 到 2 個"],
- "recommendations": ["貼文裡提到的品項，有價格就寫在後面，例：鹽麵包 ₩3,500"],
- "recommendations_web": ["網路上常被推薦、但貼文沒提到的必點，最多 4 項，不要跟上面重複"],
- "note": "一句 20 字內的繁體中文收藏原因，根據貼文內容寫",
+ "recommendations": [
+   {"name": "品名，照店家菜單上的原文寫（日本店用日文、韓國店用韓文）", "zh": "繁體中文翻譯；原文本來就是繁體中文就空字串", "desc": "一句 25 字內繁中說明：口味特色、份量或價格（例：約 ¥2,500，油花多、外皮酥）", "source": "post（貼文提到的）或 web（網路上常被推薦的）"}
+ ],
+ "note": "一句 40 字內的繁體中文收藏原因，根據貼文內容寫",
+ "highlights": {
+   "good": [{"text": "網友常提到的優點，20 字內繁中", "src": ["貼文" 或 "網路"]}],
+   "caution": [{"text": "要注意的地方，20 字內繁中", "src": ["網路"]}]
+ },
  "confidence": "high 或 low。只有貼文文字明確寫出店名或地址時才填 high；店名是你根據菜色、地區等線索上網推測出來的，一律填 low"
 }
-所有說明文字用繁體中文。查不到就照貼文內容填，不要編造。`;
+規則：
+- recommendations 最多 6 項，貼文提到的放前面。品名一定要具體：不可以只寫「豬排」「咖啡」「拉麵」這種類別詞；貼文只寫類別詞時，上網找出這間店對應的具體品名（例：特上ロースとんかつ定食）。
+- types：只有完全符合才選子類型；沒有完全符合的子類型，就只選「餐廳」這類大類。定義如下：
+${typeRules || '（無）'}
+- highlights.good 3 到 5 條、caution 0 到 3 條。只寫多個來源重複提到的共通點，不要編造。
+- caution 只寫營業時間看不出來的事，例如：排隊很久、只收現金、要預約、限時用餐、座位少、價位偏高。不要寫營業時間、公休日、地址。
+- 所有說明文字用繁體中文。查不到就照貼文內容填，不要編造。`;
   const user = `countries: ${JSON.stringify(ctx.countries)}
 cities: ${JSON.stringify(ctx.cities)}
+areas（各城市已有的商圈）: ${JSON.stringify(ctx.areas || {})}
 types: ${JSON.stringify(ctx.types)}
 使用者已選的國家: ${ctx.country || '（未選）'}
 
@@ -216,11 +247,11 @@ types: ${JSON.stringify(ctx.types)}
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001', max_tokens: 1500, system,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+      model: 'claude-haiku-4-5-20251001', max_tokens: 2500, system,
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }],
       messages: [{ role: 'user', content: user }],
     }),
-    signal: AbortSignal.timeout(45000),
+    signal: AbortSignal.timeout(50000),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error?.message || 'AI 呼叫失敗');
@@ -296,7 +327,7 @@ export async function POST(req: NextRequest) {
   let fields: any = {};
   try {
     fields = await askClaude(post, {
-      countries: body.countries || [], cities: body.cities || {}, types: body.types || [], country: body.country || '',
+      countries: body.countries || [], cities: body.cities || {}, areas: body.areas || {}, types: body.types || [], country: body.country || '',
     });
   } catch (e: any) {
     return NextResponse.json({ cover, caption: post.desc, error: 'AI 整理失敗：' + (e?.message || e) }, { status: 502 });
