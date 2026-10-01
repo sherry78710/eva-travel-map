@@ -2338,6 +2338,29 @@ function parseAddress(addr, geoData) {
 
 const SOCIAL_RE = /^https?:\/\/(www\.)?(instagram\.com|threads\.com|threads\.net)\//i;
 
+// ── 把資料庫存的自訂商圈合併進預設 GEO ─────────────────────────────────────
+function mergeGeoWithDefaults(saved:any){
+  const merged:any = JSON.parse(JSON.stringify(GEO));
+  for(const [country, cities] of Object.entries(saved||{} as any)){
+    if(!merged[country]) merged[country] = {};
+    for(const [city, districts] of Object.entries((cities||{}) as any)){
+      if(!merged[country][city]) merged[country][city] = {};
+      for(const [dist, nbs] of Object.entries((districts||{}) as any)){
+        const existing = merged[country][city][dist] || [];
+        const extra = ((nbs as string[])||[]).filter((n:string)=>!existing.includes(n));
+        merged[country][city][dist] = [...existing, ...extra];
+      }
+    }
+  }
+  return merged;
+}
+// 比較兩份資料是否相同（資料庫會重排 JSON 的欄位順序，所以先排序再比）
+function stableStr(v:any):string{
+  if(Array.isArray(v)) return '['+v.map(stableStr).join(',')+']';
+  if(v && typeof v==='object') return '{'+Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+stableStr(v[k])).join(',')+'}';
+  return JSON.stringify(v===undefined?null:v);
+}
+
 // ── 清單／圖文格：記住上次的選擇（存在這台手機，首頁和國家頁共用）──────────
 function loadViewMode():'list'|'grid'{ try{ return localStorage.getItem('etm_view_mode')==='grid' ? 'grid' : 'list'; }catch(_){ return 'list'; } }
 function saveViewMode(v:'list'|'grid'){ try{ localStorage.setItem('etm_view_mode', v); }catch(_){} }
@@ -4586,15 +4609,18 @@ export default function App() {
   const touchStartY=useRef(0);
   const isSwiping=useRef(false);
 
-  // ── 載入所有資料 ──
-  useEffect(()=>{
-    Promise.all([
-      sb.from('places').select('*').order('created_at',{ascending:false}),
-      sb.from('user_settings').select('*').eq('id','default').single(),
-      sb.from('trips').select('*').order('start_date',{ascending:true}),
-    ]).then(([placesRes, settingsRes, tripsRes])=>{
-      if(placesRes.data) setPlaces(placesRes.data.map((p:any)=>({...p, map_query: p.summary||'', branches: p.branches||[]})));
-      if(tripsRes && tripsRes.data) setTrips(tripsRes.data);
+  // ── 載入所有資料（打開時載入一次；之後每次從背景切回來也重新載入，避免拿舊畫面去改資料）──
+  const lastLoadAt=useRef(0);
+  async function loadAll(){
+    lastLoadAt.current=Date.now();
+    try{
+      const [placesRes, settingsRes, tripsRes] = await Promise.all([
+        sb.from('places').select('*').order('created_at',{ascending:false}),
+        sb.from('user_settings').select('*').eq('id','default').single(),
+        sb.from('trips').select('*').order('start_date',{ascending:true}),
+      ]);
+      if(placesRes.data){ const fresh=placesRes.data.map((p:any)=>({...p, map_query: p.summary||'', branches: p.branches||[]})); setPlaces(fresh); setSelected((prev:any)=> prev ? (fresh.find((x:any)=>x.id===prev.id) || prev) : prev); }
+      if(tripsRes && tripsRes.data){ setTrips(tripsRes.data); tripsRes.data.forEach((t:any)=>{ knownTripDays.current[t.id]=t.days||[]; }); }
       if(settingsRes.data){
         const s = settingsRes.data;
         if(s.types?.length) setTypes(s.types);
@@ -4608,30 +4634,31 @@ export default function App() {
         if(s.city_order_by_country && typeof s.city_order_by_country==='object' && !Array.isArray(s.city_order_by_country)) setCityOrderByCountry(s.city_order_by_country);
         if(s.geo_data && Object.keys(s.geo_data).length){
           // 把儲存的自訂商圈合併進 GEO
-          const merged = {...GEO};
-          for(const [country, cities] of Object.entries(s.geo_data as any)){
-            if(!merged[country]) merged[country] = {};
-            for(const [city, districts] of Object.entries(cities as any)){
-              if(!merged[country][city]) merged[country][city] = {};
-              for(const [dist, nbs] of Object.entries(districts as any)){
-                const existing = merged[country][city][dist] || [];
-                const extra = (nbs as string[]).filter((n:string)=>!existing.includes(n));
-                merged[country][city][dist] = [...existing, ...extra];
-              }
-            }
-          }
-          setGeoData(merged);
+          setGeoData(mergeGeoWithDefaults(s.geo_data));
         }
       }
-      setLoading(false);
-    }).catch(()=>setLoading(false));
+    }catch(_){}
+    setLoading(false);
+  }
+  async function loadInbox(){
+    const {data,error}=await sb.from('inbox_links').select('*').order('created_at',{ascending:false});
+    if(error){ console.warn('inbox_links 載入失敗（可能尚未建立資料表）:', error.message); return; }
+    if(data) setInbox(data);
+  }
+  useEffect(()=>{ loadAll(); },[]);
+  useEffect(()=>{
+    function onVisible(){
+      if(document.visibilityState!=='visible') return;
+      if(Date.now()-lastLoadAt.current < 15000) return; // 15 秒內剛載過就不重抓
+      loadAll(); loadInbox();
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', onVisible);
+    return ()=>{ document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('pageshow', onVisible); };
   },[]);
 
   // ── 載入待整理連結（獨立載入，即使資料表尚未建立也不影響其他資料）──
-  useEffect(()=>{
-    sb.from('inbox_links').select('*').order('created_at',{ascending:false})
-      .then(({data,error})=>{ if(error){ console.warn('inbox_links 載入失敗（可能尚未建立資料表）:', error.message); return; } if(data) setInbox(data); });
-  },[]);
+  useEffect(()=>{ loadInbox(); },[]);
 
   // ── 捷徑（方向 A）：開啟 App 時若網址帶 ?inbox=1&country=..&url=..，自動丟進待整理 ──
   const shortcutHandled=useRef(false);
@@ -4746,7 +4773,13 @@ export default function App() {
     if(!country || !city) return;
     const dist = (district||'').trim() || '其他';
     const nb = (neighborhood||'').trim();
-    const newGeo:any = JSON.parse(JSON.stringify(geoData));
+    // 先讀資料庫最新的商圈清單再加上去，避免用這支手機的舊清單蓋掉另一支手機新加的
+    let base:any = geoData;
+    try{
+      const { data } = await sb.from('user_settings').select('geo_data').eq('id','default').single();
+      if(data && data.geo_data) base = mergeGeoWithDefaults(data.geo_data);
+    }catch(_){}
+    const newGeo:any = JSON.parse(JSON.stringify(base));
     if(!newGeo[country]) newGeo[country]={};
     if(!newGeo[country][city]) newGeo[country][city]={};
     if(!newGeo[country][city][dist]) newGeo[country][city][dist]=[];
@@ -4765,17 +4798,45 @@ export default function App() {
   async function handleAddTrip(form:any){
     const payload = { title:form.title, country:form.country, cities:form.cities||[], start_date:form.start_date, end_date:form.end_date, days: tripRebuildDays(form.start_date, form.end_date, []) };
     const {data,error}=await sb.from('trips').insert([payload]).select().single();
-    if(!error&&data){ setTrips(ts=>[...ts,data]); setEditingTrip(null); setHistory(h=>h.slice(0,-1)); }
+    if(!error&&data){ knownTripDays.current[data.id]=data.days||[]; setTrips(ts=>[...ts,data]); setEditingTrip(null); setHistory(h=>h.slice(0,-1)); }
     else { alert('建立失敗：'+(error?.message||'')); }
+  }
+
+  // ── 行程存檔保護 ──
+  // knownTripDays：這支手機「最後一次從資料庫看到／自己存進去」的每天安排
+  // 存檔前先讀資料庫，跟 knownTripDays 不一樣 → 代表另一支手機改過 → 換成最新版本、不存
+  // 存檔排隊一個一個來，連續快速操作也不會誤判；發生衝突後，排在後面的舊操作也一律丟掉
+  const knownTripDays=useRef<any>({});
+  const tripQueue=useRef<Promise<any>>(Promise.resolve());
+  const tripConflictGen=useRef(0);
+  function queueTripSave(tripId:string, writePatch:any, onOk?:()=>void){
+    const gen=tripConflictGen.current;
+    tripQueue.current = tripQueue.current.then(async()=>{
+      if(gen!==tripConflictGen.current) return; // 發生過衝突，這個舊操作不存
+      try{
+        const { data } = await sb.from('trips').select('*').eq('id',tripId).single();
+        const known = knownTripDays.current[tripId];
+        if(data && known!==undefined && stableStr(data.days||[])!==stableStr(known||[])){
+          tripConflictGen.current++;
+          knownTripDays.current[tripId]=data.days||[];
+          setTrips(ts=>ts.map(t=>t.id===tripId?data:t));
+          alert('這個行程在另一支手機改過，已更新成最新版本。請再改一次。');
+          return;
+        }
+        const { error } = await sb.from('trips').update(writePatch).eq('id',tripId);
+        if(error){ alert('儲存失敗：'+(error.message||'')); return; }
+        knownTripDays.current[tripId]=writePatch.days;
+        if(onOk) onOk();
+      }catch(e:any){ alert('儲存失敗，請確認網路'); }
+    });
+    return tripQueue.current;
   }
 
   async function handleUpdateTrip(form:any){
     const existing = trips.find(t=>t.id===form.id);
     const newDays = tripRebuildDays(form.start_date, form.end_date, existing?.days||[]);
     const patch = { title:form.title, country:form.country, cities:form.cities||[], start_date:form.start_date, end_date:form.end_date, days:newDays };
-    const {error}=await sb.from('trips').update(patch).eq('id',form.id);
-    if(!error){ setTrips(ts=>ts.map(t=>t.id===form.id?{...t,...patch}:t)); setEditingTrip(null); setHistory(h=>h.slice(0,-1)); }
-    else { alert('儲存失敗：'+(error?.message||'')); }
+    await queueTripSave(form.id, patch, ()=>{ setTrips(ts=>ts.map(t=>t.id===form.id?{...t,...patch}:t)); setEditingTrip(null); setHistory(h=>h.slice(0,-1)); });
   }
 
   async function handleDeleteTrip(id:string){
@@ -4786,8 +4847,8 @@ export default function App() {
   }
 
   async function handleSaveTripDays(tripId:string, newDays:any[]){
-    setTrips(ts=>ts.map(t=>t.id===tripId?{...t,days:newDays}:t));
-    await sb.from('trips').update({days:newDays}).eq('id',tripId);
+    setTrips(ts=>ts.map(t=>t.id===tripId?{...t,days:newDays}:t)); // 畫面先更新
+    await queueTripSave(tripId, { days:newDays });
   }
 
   async function handleAddToTrip(tripId:string, dateStr:string, item:any){
