@@ -1358,10 +1358,15 @@ function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onT
 
 // ── Country ───────────────────────────────────────────────────────────────────
 function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCityOrder }) {
-  const [q, setQ] = useState("");
-  const [collapsed, setCollapsed] = useState<any>({});
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterCity, setFilterCity] = useState("");
+  const memKey = 'country:'+country;
+  const mem = PAGE_MEM[memKey] || {};
+  const [q, setQ] = useState(mem.q ?? "");
+  const [collapsed, setCollapsed] = useState<any>(mem.collapsed ?? {});
+  const [filterStatus, setFilterStatus] = useState(mem.filterStatus ?? "");
+  const [filterCity, setFilterCity] = useState(mem.filterCity ?? "");
+  useEffect(()=>{ memSet(memKey, { q, collapsed, filterStatus, filterCity }); },[q, collapsed, filterStatus, filterCity]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useScrollMemory(memKey, ()=>scrollRef.current);
   const [viewMode, setViewModeRaw] = useState<'list'|'grid'>(loadViewMode);
   const setViewMode = (v:'list'|'grid') => { setViewModeRaw(v); saveViewMode(v); };
   const [showCityOrder, setShowCityOrder] = useState(false);
@@ -1491,7 +1496,7 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
       )}
 
       {/* 滾動區域 */}
-      <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"12px 20px 40px" }}>
+      <div ref={scrollRef} style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"12px 20px 40px" }}>
         {filtered.length === 0 && (
           <div style={{ textAlign:"center", padding:"60px 0", color:"#8E8E93", fontSize:15 }}>{q||filterStatus ? "沒有符合的地點" : "還沒有收藏"}</div>
         )}
@@ -2363,6 +2368,21 @@ function stableStr(v:any):string{
   if(Array.isArray(v)) return '['+v.map(stableStr).join(',')+']';
   if(v && typeof v==='object') return '{'+Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+stableStr(v[k])).join(',')+'}';
   return JSON.stringify(v===undefined?null:v);
+}
+
+// ── 頁面記憶：國家頁、搜尋頁點進店家再返回時，保留搜尋字、篩選和捲動位置 ──
+// （同一時間只顯示一層頁面，點進詳細頁時原本的頁面會被關掉，所以存在這裡；回到首頁就清掉）
+const PAGE_MEM:any = {};
+function memSet(key:string, patch:any){ PAGE_MEM[key] = { ...(PAGE_MEM[key]||{}), ...patch }; }
+function useScrollMemory(key:string, getEl:()=>HTMLElement|null|undefined){
+  useEffect(()=>{
+    const el = getEl(); if(!el) return;
+    const saved = PAGE_MEM[key]?.scroll;
+    if(saved) requestAnimationFrame(()=>{ el.scrollTop = saved; requestAnimationFrame(()=>{ el.scrollTop = saved; }); });
+    const on = ()=>memSet(key, { scroll: el.scrollTop });
+    el.addEventListener('scroll', on, { passive:true } as any);
+    return ()=>el.removeEventListener('scroll', on);
+  },[]);
 }
 
 // ── 清單／圖文格：記住上次的選擇（存在這台手機，首頁和國家頁共用）──────────
@@ -3690,14 +3710,18 @@ function DRow({ label, value }) {
 
 // ── Search ────────────────────────────────────────────────────────────────────
 function Search({ places, onBack, onSelect }) {
-  const [q,setQ]=useState(""); const [fS,setFS]=useState(""); const [fT,setFT]=useState("");
+  const mem = PAGE_MEM.search || {};
+  const [q,setQ]=useState(mem.q ?? ""); const [fS,setFS]=useState(mem.fS ?? ""); const [fT,setFT]=useState(mem.fT ?? "");
+  useEffect(()=>{ memSet('search', { q, fS, fT }); },[q, fS, fT]);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useScrollMemory('search', ()=>rootRef.current?.parentElement);
   const filtered=places.filter(p=>{ const lq=q.toLowerCase(); const mQ=!q||[p.name,p.neighborhood,p.district,p.city,p.country,p.note||"",...(p.types||[]),...(p.recommendations||[])].filter(Boolean).some((s:any)=>String(s).toLowerCase().includes(lq)); const mS=!fS||(fS==="favorite"?!!p.favorite:p.status===fS); return mQ&&mS&&(!fT||p.types?.includes(fT)); });
   return (
-    <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
+    <div ref={rootRef} style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
       <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 12px)", paddingBottom:"12px", paddingLeft:"16px", paddingRight:"16px" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, background:"#F5F0EB", borderRadius:12, padding:"10px 14px", marginBottom:10 }}>
           <span style={{ fontSize:14, color:"#8E8E93" }}>🔍</span>
-          <input value={q} onChange={e=>setQ(e.target.value)} autoFocus style={{ flex:1, border:"none", outline:"none", fontSize:16, background:"none", color:"#000", fontFamily:"inherit" }} />
+          <input value={q} onChange={e=>setQ(e.target.value)} autoFocus={!mem.q} style={{ flex:1, border:"none", outline:"none", fontSize:16, background:"none", color:"#000", fontFamily:"inherit" }} />
           <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:14, cursor:"pointer", padding:0 }}>取消</button>
         </div>
         <div style={{ display:"flex", gap:6, overflowX:"auto" }}>
@@ -5141,6 +5165,11 @@ export default function App() {
     setHistory(h=>[...h, dest]);
   }
   function goBack(){ setHistory(h=>h.length>1?h.slice(0,-1):h); }
+  // 國家頁／搜尋頁真正關掉（不在返回路徑上）時，清掉它們的記憶，下次進去是全新的
+  useEffect(()=>{
+    if(!history.includes('country')) Object.keys(PAGE_MEM).forEach(k=>{ if(k.startsWith('country:')) delete PAGE_MEM[k]; });
+    if(!history.includes('search')) delete PAGE_MEM.search;
+  },[history]);
 
   // ── 新增 ──
   async function handleAdd(p:any){
