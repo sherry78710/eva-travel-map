@@ -242,6 +242,7 @@ ${typeRules || '（無）'}
   const targetNote = target ? `
 
 ★ 這次要整理的店已經確定是：「${target.name}」${target.hint ? `（貼文對這間的說明：${target.hint}）` : ''}。這是從貼文照片（例如地圖店家卡片）讀到、或使用者指定的正確店名，請用這個名稱上網搜尋，不要改猜別間。
+店名已經確定，最多只能搜尋 2 次，不用再確認是哪間店：第 1 次查菜單和必點品項（例如「店名 メニュー」「店名 必點」），第 2 次查網友評價（例如「店名 口コミ」「店名 評價」）。
 貼文如果介紹了好幾間，name、recommendations、note、highlights 都只寫這一間，其他店完全不要管。search_query 要包含這個店名。` : '';
   const user = `countries: ${JSON.stringify(ctx.countries)}
 cities: ${JSON.stringify(ctx.cities)}
@@ -256,7 +257,8 @@ types: ${JSON.stringify(ctx.types)}
     headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001', max_tokens: 2500, system,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }],
+      // 店名已確定（照片讀到、使用者指定、多間店模式）→ 不用再搜「是哪間店」，上限 2 次；要用猜的 → 上限 4 次
+      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: target ? 2 : 4 }],
       messages: [{ role: 'user', content: user }],
     }),
     signal: AbortSignal.timeout(50000),
