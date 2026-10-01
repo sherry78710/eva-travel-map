@@ -746,6 +746,10 @@ function BranchesEditor({ branches, country, countries, geoData, onChange }) {
             <input value={b.address||""} onChange={e=>handleAddressChange(i, e.target.value)}
               style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
           </div>
+          <div style={{ padding:"14px 16px", borderTop:"1px solid #EDE8E2" }}>
+            <div style={{ fontSize:11, color:"#8E8E93", marginBottom:5, textTransform:"uppercase", letterSpacing:0.5 }}>這間分店的營業時間 <span style={{ color:"#C7C7CC", fontWeight:400 }}>· 選填</span></div>
+            <AutoGrowTextarea value={b.opening_hours||""} onChange={(e:any)=>update(i,{opening_hours:e.target.value})} placeholder="例：週一至週六 11:30–21:00" style={{ fontSize:14, color:"#000", lineHeight:1.6 }} />
+          </div>
         </div>
       ))}
       <button onClick={add} style={{ width:"100%", padding:"12px 0", borderRadius:14, border:"1.5px dashed #C9C4BE", background:"none", color:"#8E8E93", fontSize:14, fontWeight:600, cursor:"pointer" }}>＋ 新增分店</button>
@@ -2653,6 +2657,9 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
   const topRef = useRef<HTMLDivElement>(null);
   // 自己用「重新找 Google 地圖」找到店 → 代表 AI 原本猜錯 → 用這間時換名稱、提示重新整理
   const manualPick = useRef(false);
+  const [candUse,setCandUse] = useState<any>({}); // { [Google 店家編號]: 'main' | 'branch' }
+  const [branchBusy,setBranchBusy] = useState('');
+  useEffect(()=>{ setCandUse({}); },[cands]);
   const [scanInfo,setScanInfo] = useState<{kind:'ok'|'none'|'warn', text:string}|null>(null);
   const [redo,setRedo] = useState<any>(null);
 
@@ -2835,7 +2842,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       const addr = d.address || c.address || '';
       const parsed = addr ? parseAddressMultiCountry(addr) : null;
       const x:any = fRef.current;
-      const n:any = {...x, google_place_id:c.id};
+      const n:any = {...x, google_place_id:c.id, branches:(x.branches||[]).filter((b:any)=>b.google_place_id!==c.id)};
       const filled:string[] = [];
       // 自己找到的店：名稱、地圖搜尋名稱換成 Google 上的正式店名
       if(manual && c.name){ n.name=c.name; n.map_query=c.name; filled.push('name','map_query'); }
@@ -2856,9 +2863,34 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       if(d.summaryNote) setAf({status:'done', msg:d.summaryNote});
       setF(n); fRef.current=n;
       setAutoKeys(ks=>Array.from(new Set([...ks, ...filled])));
-      setCands([]);
+      // 清單保留著，方便再把其他候選加成分店
+      setCandUse((u:any)=>{ const v:any={}; Object.keys(u).forEach(k=>{ if(u[k]==='branch' && k!==c.id) v[k]='branch'; }); v[c.id]='main'; return v; });
       if(manual){ manualPick.current=false; if(SOCIAL_RE.test(n.source_url||'')) setRedo({ cand:c }); }
     } finally { setCandBusy(false); }
+  }
+
+  // 候選加為分店：查這間的地址、營業時間，存進「其他分店」（再按一次取消）
+  async function toggleBranch(c:any){
+    if(branchBusy) return;
+    if(candUse[c.id]==='branch'){
+      const n:any={ ...fRef.current, branches:(fRef.current.branches||[]).filter((b:any)=>b.google_place_id!==c.id) };
+      setF(n); fRef.current=n;
+      setCandUse((u:any)=>{ const v={...u}; delete v[c.id]; return v; });
+      return;
+    }
+    setBranchBusy(c.id);
+    try{
+      const res = await fetch(`/api/place-details?id=${encodeURIComponent(c.id)}&country=${encodeURIComponent(fRef.current.country||'')}`);
+      const d:any = await res.json().catch(()=>({}));
+      if(!res.ok || d.error){ alert(d.error||'查詢失敗'); return; }
+      const addr = d.address || c.address || '';
+      const parsed:any = addr ? parseAddressMultiCountry(addr) : null;
+      const br:any = { name:c.name||'', address:addr, city:parsed?.city||'', district:parsed?.district||'', neighborhood:parsed?.neighborhood || (d.area && d.area!==parsed?.district ? d.area : ''), map_query:c.name||'', opening_hours:d.opening_hours||'', google_place_id:c.id };
+      const n:any={ ...fRef.current, branches:[...(fRef.current.branches||[]).filter((b:any)=>b.google_place_id!==c.id), br] };
+      setF(n); fRef.current=n;
+      setCandUse((u:any)=>({ ...u, [c.id]:'branch' }));
+    }catch(_){ alert('查詢失敗，請確認網路'); }
+    finally{ setBranchBusy(''); }
   }
 
   // 用正確店名重新整理收藏原因、推薦品項、網友怎麼說、類型（地址、營業時間、照片不動）
@@ -2991,31 +3023,39 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
             </div>
           </div>
         )}
-        {cand && (
+        {cands.length>0 && (
           <div style={{ background:"#fff", borderRadius:16, padding:"12px 16px", marginBottom:12, border:"1px solid rgba(28,27,25,0.08)" }}>
             {guess && (
               <div style={{ background:"#FFF4DB", color:"#8A5A00", fontSize:13, borderRadius:10, padding:"8px 10px", marginBottom:10, lineHeight:1.5 }}>
                 貼文沒寫店名，這是 AI 推測的，請先看地圖確認
               </div>
             )}
-            <div style={{ fontSize:12, color:"#8E8E93", marginBottom:4 }}>Google 地圖找到{cands.length>1?`（${candIdx+1}/${cands.length}）`:''}</div>
-            <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:15, fontWeight:600, color:"#000" }}>{cand.name}</div>
-                <div style={{ fontSize:13, color:"#6b655c", marginTop:2 }}>{cand.address}</div>
+            <div style={{ fontSize:12, color:"#8E8E93", marginBottom:2 }}>Google 地圖找到 {cands.length} 間{cands.length>1?"・可以設一間主店，其他加為分店":""}</div>
+            {cands.map((c:any)=>{ const use=candUse[c.id]; return (
+              <div key={c.id} style={{ padding:"10px 0", borderTop:"1px solid #F0EBE5", marginTop:8 }}>
+                <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:15, fontWeight:600, color:"#000" }}>{c.name}{use==='main'&&<span style={{ marginLeft:6, fontSize:11, color:"#fff", background:"#3C3C3C", padding:"1px 6px", borderRadius:6, verticalAlign:"middle" }}>主店</span>}{use==='branch'&&<span style={{ marginLeft:6, fontSize:11, color:"#185FA5", background:"#E6F1FB", padding:"1px 6px", borderRadius:6, verticalAlign:"middle" }}>分店</span>}</div>
+                    <div style={{ fontSize:13, color:"#6b655c", marginTop:2 }}>{c.address}</div>
+                  </div>
+                  <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.name)}&query_place_id=${c.id}`} target="_blank" rel="noreferrer" aria-label="在 Google 地圖查看"
+                    style={{ width:44, height:44, borderRadius:12, border:"1px solid rgba(28,27,25,0.15)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", textDecoration:"none", flexShrink:0, color:"#007AFF", background:"#fff" }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#EA4335"/><circle cx="12" cy="9" r="2.5" fill="white"/></svg>
+                    <span style={{ fontSize:10, marginTop:1 }}>地圖</span>
+                  </a>
+                </div>
+                <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:8 }}>
+                  <button onClick={()=>useCandidate(c)} disabled={candBusy||use==='main'}
+                    style={{ padding:"6px 12px", borderRadius:10, border:"none", background:use==='main'?"#C7C7CC":"#3C3C3C", color:"#fff", fontSize:13, fontWeight:600, cursor:use==='main'?"default":"pointer" }}>{candBusy&&use!=='main'?"填入中…":use==='main'?"✓ 主店":"設為主店"}</button>
+                  {cands.length>1 && (
+                    <button onClick={()=>toggleBranch(c)} disabled={use==='main'||!!branchBusy}
+                      style={{ padding:"6px 12px", borderRadius:10, border:use==='branch'?"none":"1px solid #C7C7CC", background:use==='branch'?"#E6F1FB":"#fff", color:use==='main'?"#C7C7CC":use==='branch'?"#185FA5":"#000", fontSize:13, fontWeight:600, cursor:use==='main'?"default":"pointer" }}>{branchBusy===c.id?"查詢中…":use==='branch'?"✓ 分店（再按取消）":"加為分店"}</button>
+                  )}
+                </div>
               </div>
-              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cand.name)}&query_place_id=${cand.id}`} target="_blank" rel="noreferrer" aria-label="在 Google 地圖查看"
-                style={{ width:44, height:44, borderRadius:12, border:"1px solid rgba(28,27,25,0.15)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", textDecoration:"none", flexShrink:0, color:"#007AFF", background:"#fff" }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#EA4335"/><circle cx="12" cy="9" r="2.5" fill="white"/></svg>
-                <span style={{ fontSize:10, marginTop:1 }}>地圖</span>
-              </a>
-            </div>
-            <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:12 }}>
-              <button onClick={()=>useCandidate(cand)} disabled={candBusy}
-                style={{ padding:"6px 14px", borderRadius:10, border:"none", background:"#3C3C3C", color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>{candBusy?"填入中…":"用這間"}</button>
-              {candIdx < cands.length-1
-                ? <button onClick={()=>setCandIdx(i=>i+1)} style={{ padding:"6px 10px", border:"none", background:"none", color:"#8E8E93", fontSize:14, cursor:"pointer" }}>不是，看下一間</button>
-                : <button onClick={()=>setCands([])} style={{ padding:"6px 10px", border:"none", background:"none", color:"#8E8E93", fontSize:14, cursor:"pointer" }}>都不是，自己填</button>}
+            ); })}
+            <div style={{ display:"flex", justifyContent:"flex-end", marginTop:6 }}>
+              <button onClick={()=>setCands([])} style={{ padding:"6px 2px", border:"none", background:"none", color:"#8E8E93", fontSize:13, cursor:"pointer" }}>{Object.keys(candUse).length ? "完成，收起" : "都不是，自己填"}</button>
             </div>
           </div>
         )}
@@ -3491,7 +3531,7 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
 
         {branchLocations(place).map((loc:any, i:number) => {
           const baseName = (place.map_query && place.map_query.trim()) ? place.map_query.trim() : (place.name||"");
-          const locSearchName = [baseName, (loc.name||"").trim()].filter(Boolean).join(" ").trim();
+          const locSearchName = (i>0 && (loc.map_query||"").trim()) ? loc.map_query.trim() : [baseName, (loc.name||"").trim()].filter(Boolean).join(" ").trim();
           const locQ = encodeURIComponent([locSearchName, loc.address].map((s:string)=>(s||"").trim()).filter(Boolean).join(" "));
           const hasMultiple = branchLocations(place).length > 1;
           return (
@@ -3533,6 +3573,12 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
                   )}
                 </div>
               </div>
+              {i>0 && (loc.opening_hours||"").trim() && (
+                <details style={{ borderTop:"1px solid #F0EBE5", padding:"10px 16px" }}>
+                  <summary style={{ fontSize:13, color:"#007AFF", cursor:"pointer", listStyle:"none" }}>這間分店的營業時間 ▾</summary>
+                  <div style={{ fontSize:14, color:"#000", lineHeight:1.6, whiteSpace:"pre-line", marginTop:6 }}>{loc.opening_hours}</div>
+                </details>
+              )}
             </div>
           );
         })}

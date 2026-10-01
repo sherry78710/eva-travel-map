@@ -227,6 +227,7 @@ async function askClaude(post: { title: string; desc: string }, ctx: any) {
    "good": [{"text": "網友常提到的優點，20 字內繁中", "src": ["貼文" 或 "網路"]}],
    "caution": [{"text": "要注意的地方，20 字內繁中", "src": ["網路"]}]
  },
+ "branches_in_post": [{"name": "分店名稱（照貼文寫法）", "address": "貼文寫的這間分店地址"}]（貼文列出這間店的好幾間分店或好幾個地址時才填，每間一筆；只有一個地點就給空陣列 []）,
  "confidence": "high 或 low。只有貼文文字明確寫出店名或地址時才填 high；店名是你根據菜色、地區等線索上網推測出來的，一律填 low"
 }
 規則：
@@ -430,6 +431,20 @@ export async function POST(req: NextRequest) {
       const retry = [fields.name, fields.city].filter(Boolean).join(' ');
       if (!candidates.length && retry && retry !== fields.search_query && (await bump('search', LIMIT_SEARCH)) === 'ok') {
         candidates = await searchGoogle(retry, country);
+      }
+      // 貼文列了好幾間分店：每間分店各搜一次，讓所有分店都出現在候選清單
+      const brs: any[] = (Array.isArray(fields.branches_in_post) ? fields.branches_in_post : []).slice(0, 4);
+      if (brs.length >= 2) {
+        const seen = new Set(candidates.map((c: any) => c.id));
+        for (const b of brs) {
+          const q = [String(b?.name || ''), String(b?.address || '')].map(x => x.trim()).filter(Boolean).join(' ');
+          if (!q || (await bump('search', LIMIT_SEARCH)) !== 'ok') continue;
+          const found = await searchGoogle(q, country);
+          // 每個分店地址只取最相符的第一筆
+          const top = found.find((c: any) => !seen.has(c.id));
+          if (top) { seen.add(top.id); candidates.push(top); }
+        }
+        candidates = candidates.slice(0, 6);
       }
     } else searchNote = rS === 'limit' ? '今日 Google 搜尋次數已用完，地址請手動填寫' : rS;
   }
