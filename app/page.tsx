@@ -3148,6 +3148,24 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
     finally{ setBranchBusy(''); }
   }
 
+  // AI 找不到店名時，使用者自己輸入（例如留言裡看到的）→ 用這個店名重新整理
+  const [knownName,setKnownName] = useState('');
+  async function runWithKnownName(){
+    const name = knownName.trim();
+    if(!name || !SOCIAL_RE.test(fRef.current.source_url||'')) return;
+    const tok = ++runToken.current;
+    const hadPhotos = (fRef.current.photos||[]).length > 0;
+    const cleared:any = { ...fRef.current, name:"", map_query:"", note:"", recommendations:"", review_highlights:null, types:[] };
+    setF(cleared); fRef.current=cleared;
+    setAutoKeys([]); setCands([]); setCandIdx(0); setGuess(false); setRedo(null);
+    setScanInfo({ kind:'ok', text:`用你輸入的店名：${name}` });
+    setAf({status:'loading', msg:`用「${name}」上網查資料中…約需 20 秒`});
+    const r = await fetchAutofill(fRef.current.source_url, fRef.current.country||'', { name, hint:'' }, hadPhotos);
+    if(tok!==runToken.current) return;
+    applyAutofill(r, hadPhotos);
+    setKnownName('');
+  }
+
   // 用正確店名重新整理收藏原因、推薦品項、網友怎麼說、類型（地址、營業時間、照片不動）
   async function redoAutofill(){
     const c = redo?.cand; if(!c) return;
@@ -3248,6 +3266,18 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
             {af.status==='loading' && <div style={{ fontSize:13, color:"#8E8E93", marginTop:8 }}>{af.msg}</div>}
             {af.status!=='loading' && af.msg && <div style={{ fontSize:13, color: af.status==='error' ? "#C0392B" : "#8E8E93", marginTop:8 }}>{af.msg}</div>}
             {scanInfo && multi?.step!=='run' && <div style={{ fontSize:12, color: scanInfo.kind==='ok' ? "#0F6E56" : scanInfo.kind==='warn' ? "#A32D2D" : "#8E8E93", marginTop:6 }}>{scanInfo.text}</div>}
+            {SOCIAL_RE.test(f.source_url||'') && multi?.step!=='run' && af.status!=='loading' && (af.status==='error' || guess || (af.status==='done' && !String(f.name||'').trim())) && (
+              <div style={{ marginTop:10, background:"#F5F0EB", borderRadius:12, padding:"10px 12px" }}>
+                <div style={{ fontSize:12, color:"#6b655c", marginBottom:6 }}>{guess ? "不是這間？" : "AI 找不到店名？"}知道店名（例如留言裡寫的）就直接輸入</div>
+                <div style={{ display:"flex", gap:8 }}>
+                  <input value={knownName} onChange={e=>setKnownName(e.target.value)} placeholder="例：繁邦"
+                    onKeyDown={e=>{ if(e.key==='Enter') runWithKnownName(); }}
+                    style={{ flex:1, minWidth:0, border:"1px solid #E2DBD2", borderRadius:10, padding:"8px 10px", fontSize:15, background:"#fff", fontFamily:"inherit", outline:"none" }} />
+                  <button onClick={runWithKnownName} disabled={!knownName.trim()}
+                    style={{ flexShrink:0, padding:"8px 12px", borderRadius:10, border:"none", background:knownName.trim()?"#3C3C3C":"#C7C7CC", color:"#fff", fontSize:13, fontWeight:600, cursor:knownName.trim()?"pointer":"default" }}>用這個店名整理</button>
+                </div>
+              </div>
+            )}
             {af.status==='error' && SOCIAL_RE.test(f.source_url||'') && (
               <button onClick={()=>{ lastUrl.current=""; runAutofill(f.source_url.trim()); }} style={{ marginTop:6, background:"none", border:"none", color:"#007AFF", fontSize:13, padding:0, cursor:"pointer" }}>重試</button>
             )}
