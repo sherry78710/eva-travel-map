@@ -116,7 +116,10 @@ async function lookup(id: string, country: string, name: string, hints: HL | nul
       const rs = await bump('summary', LIMIT_SUMMARY);
       if (rs === 'ok') {
         highlights = await summarize(name, reviews, hints);
-        if (!highlights) summaryNote = '「網友怎麼說」整理失敗，先保留網路找到的重點';
+        if (!highlights) {
+          summaryNote = '「網友怎麼說」整理失敗，先保留網路找到的重點';
+          try { await sb.rpc('bump_usage', { p_kind: 'summary', p_limit: LIMIT_SUMMARY, p_n: -1 }); } catch {} // 失敗不算次數
+        }
       } else summaryNote = rs === 'limit' ? '今日「網友怎麼說」整理次數已用完，先保留網路找到的重點' : rs;
     }
   }
