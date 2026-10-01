@@ -17,7 +17,7 @@ const sb = createClient(
 const LIMIT_UPLOAD = 200;          // 跟 shortcut-upload 共用每日上限
 const MAX_BYTES = 10 * 1024 * 1024; // 單張最大 10 MB
 const MAX_PAGE = 5 * 1024 * 1024;   // 嵌入頁文字最大 5 MB
-const MAX_PHOTOS = 10;              // IG 一篇最多 10 張
+const MAX_PHOTOS = 20;              // IG 一篇最多 20 張（一篇介紹多間店時照片會比較多）
 
 // 只允許 IG / FB 的圖片伺服器，避免被拿去下載任意網址
 function allowedHost(u: URL) {
@@ -86,8 +86,8 @@ export async function POST(req: NextRequest) {
   if (bumpErr) return NextResponse.json({ error: '計數功能出錯：' + bumpErr.message }, { status: 500 });
   if (ok !== true) return NextResponse.json({ error: '今日上傳次數已用完' }, { status: 429 });
 
-  const urls: string[] = [];
-  for (const src of srcs) {
+  // 20 張一張一張下載太慢，改成 4 張一組同時下載（順序不變）
+  async function saveOne(src: string): Promise<string> {
     try {
       const r = await fetch(src, {
         cache: 'no-store',
@@ -99,18 +99,24 @@ export async function POST(req: NextRequest) {
       const type = (r.headers.get('content-type') || '').split(';')[0];
       if (!r.ok || !type.startsWith('image/')) {
         console.error('shortcut-fetch download', r.status, type, src.slice(0, 120));
-        continue;
+        return '';
       }
       const buf = Buffer.from(await r.arrayBuffer());
-      if (!buf.length || buf.length > MAX_BYTES) continue;
+      if (!buf.length || buf.length > MAX_BYTES) return '';
       const ext = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : type.includes('heic') ? 'heic' : 'jpg';
       const path = `places/ig_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
       const { error } = await sb.storage.from('photos').upload(path, buf, { contentType: type, upsert: true });
-      if (error) { console.error('shortcut-fetch upload', error); continue; }
-      urls.push(sb.storage.from('photos').getPublicUrl(path).data.publicUrl);
+      if (error) { console.error('shortcut-fetch upload', error); return ''; }
+      return sb.storage.from('photos').getPublicUrl(path).data.publicUrl;
     } catch (e) {
       console.error('shortcut-fetch', e);
+      return '';
     }
+  }
+  const urls: string[] = [];
+  for (let i = 0; i < srcs.length; i += 4) {
+    const batch = await Promise.all(srcs.slice(i, i + 4).map(saveOne));
+    batch.forEach(u => { if (u) urls.push(u); });
   }
   console.log('shortcut-fetch', JSON.stringify({ found: srcs.length, saved: urls.length }));
   if (!urls.length) return NextResponse.json({ error: '照片下載失敗' }, { status: 502 });

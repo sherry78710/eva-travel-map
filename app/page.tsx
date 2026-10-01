@@ -2469,6 +2469,73 @@ function PhotoActionSheet({ photo, isCover, onSetCover, onAdjust, onClose }:any)
   );
   return createPortal(ui, document.body);
 }
+// ── 一篇介紹好幾間：勾選要存哪幾間 ─────────────────────────────────────────
+function MultiPlacePicker({ m, onToggle, onAll, onStart, onOne, onCancel }:any){
+  if(typeof document==="undefined") return null;
+  const n = (m.sel||[]).filter(Boolean).length;
+  const allOn = n===(m.list||[]).length;
+  const ui = (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.35)", zIndex:2000, display:"flex", flexDirection:"column", justifyContent:"flex-end" }}>
+      <div style={{ background:"#F5F0EB", borderRadius:"18px 18px 0 0", maxHeight:"88vh", display:"flex", flexDirection:"column", paddingBottom:"calc(env(safe-area-inset-bottom) + 12px)" }}>
+        <div style={{ padding:"16px 20px 10px", display:"flex", alignItems:"center" }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:17, fontWeight:600 }}>這篇介紹了 {m.list.length} 間</div>
+            <div style={{ fontSize:13, color:"#8E8E93", marginTop:2 }}>勾選要存的店，會一間一間整理</div>
+          </div>
+          <button onClick={()=>onAll(!allOn)} style={{ background:"none", border:"none", color:"#007AFF", fontSize:14, cursor:"pointer", padding:0 }}>{allOn?"全不選":"全選"}</button>
+        </div>
+        <div style={{ overflowY:"auto", padding:"0 16px", flex:1 }}>
+          {m.list.map((it:any,i:number)=>{ const on=!!m.sel[i]; return (
+            <button key={i} onClick={()=>onToggle(i)} style={{ display:"flex", alignItems:"center", gap:10, width:"100%", background:"#FDF8F3", border:on?"2px solid #3C3C3C":"2px solid transparent", borderRadius:14, padding:"10px 12px", marginBottom:8, cursor:"pointer", textAlign:"left" }}>
+              <span style={{ width:22, height:22, borderRadius:6, flexShrink:0, background:on?"#3C3C3C":"#fff", border:on?"none":"1.5px solid #C7C7CC", color:"#fff", fontSize:14, display:"flex", alignItems:"center", justifyContent:"center" }}>{on?"✓":""}</span>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:15, fontWeight:600, color:"#000" }}>{it.name}</div>
+                {it.hint && <div style={{ fontSize:12, color:"#8E8E93", marginTop:2, lineHeight:1.4, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" } as any}>{it.hint}</div>}
+                <div style={{ display:"flex", gap:4, marginTop:6 }}>
+                  {it.photos.slice(0,4).map((u:string)=><img key={u} src={u} alt="" style={{ width:40, height:40, objectFit:"cover", borderRadius:6 }} />)}
+                  {it.photos.length>4 && <span style={{ fontSize:12, color:"#8E8E93", alignSelf:"center" }}>+{it.photos.length-4}</span>}
+                  {!it.photos.length && <span style={{ fontSize:12, color:"#A69C90" }}>沒有配到照片</span>}
+                </div>
+              </div>
+            </button>
+          ); })}
+        </div>
+        <div style={{ padding:"10px 16px 0" }}>
+          <button onClick={onStart} disabled={!n} style={{ width:"100%", padding:"14px", borderRadius:14, border:"none", background:n?"#3C3C3C":"#C7C7CC", color:"#fff", fontSize:16, fontWeight:600, cursor:n?"pointer":"default" }}>存這 {n} 間</button>
+          <div style={{ display:"flex", justifyContent:"space-between", marginTop:10 }}>
+            <button onClick={onCancel} style={{ background:"none", border:"none", color:"#8E8E93", fontSize:14, cursor:"pointer", padding:4 }}>取消</button>
+            <button onClick={onOne} style={{ background:"none", border:"none", color:"#007AFF", fontSize:14, cursor:"pointer", padding:4 }}>其實只有一間，照一般方式整理</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+  return createPortal(ui, document.body);
+}
+// ── 從同一篇貼文挑照片加進來（配錯時補照片用）──────────────────────────────
+function PostPhotoPicker({ all, chosen, onToggle, onClose }:any){
+  if(typeof document==="undefined") return null;
+  const ui = (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.35)", zIndex:2000, display:"flex", flexDirection:"column", justifyContent:"flex-end" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"#F5F0EB", borderRadius:"18px 18px 0 0", maxHeight:"80vh", display:"flex", flexDirection:"column", paddingBottom:"calc(env(safe-area-inset-bottom) + 12px)" }}>
+        <div style={{ padding:"16px 20px 10px", display:"flex", alignItems:"center" }}>
+          <div style={{ flex:1, fontSize:16, fontWeight:600 }}>這篇貼文的照片</div>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#007AFF", fontSize:15, fontWeight:600, cursor:"pointer", padding:0 }}>完成</button>
+        </div>
+        <div style={{ overflowY:"auto", padding:"0 16px", display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:6 }}>
+          {all.map((u:string)=>{ const on=chosen.includes(u); return (
+            <button key={u} onClick={()=>onToggle(u)} style={{ position:"relative", padding:0, border:"none", background:"none", cursor:"pointer", aspectRatio:"1/1", borderRadius:10, overflow:"hidden", outline:on?"3px solid #3C3C3C":"none", outlineOffset:-3 }}>
+              <img src={u} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", opacity:on?1:0.75 }} />
+              {on && <span style={{ position:"absolute", top:5, right:5, width:20, height:20, borderRadius:10, background:"#3C3C3C", color:"#fff", fontSize:12, display:"flex", alignItems:"center", justifyContent:"center" }}>✓</span>}
+            </button>
+          ); })}
+        </div>
+        <div style={{ fontSize:12, color:"#A69C90", padding:"10px 20px 0" }}>點照片加入或移除</div>
+      </div>
+    </div>
+  );
+  return createPortal(ui, document.body);
+}
 function CoverBadge(){
   return <span style={{ position:"absolute", left:3, bottom:3, fontSize:10, fontWeight:600, color:"#fff", background:"rgba(0,0,0,0.65)", padding:"1px 5px", borderRadius:5, pointerEvents:"none" }}>封面</span>;
 }
@@ -2554,7 +2621,7 @@ function HighlightsList({ hl, onRemove }:any){
   );
 }
 
-function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb, initial, convertInboxId, onConverted }:any) {
+function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb, initial, convertInboxId, onConverted, onAddInbox }:any) {
   const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[],branches:[],google_place_id:"",review_highlights:null,cover_position:null, ...(initial||{}) });
   const [recEdit,setRecEdit] = useState(false);
   const [photoSheet,setPhotoSheet] = useState<number|null>(null);
@@ -2577,29 +2644,39 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
   const set=(k:string,v:any)=>{ setF((x:any)=>({...x,[k]:v})); clearAuto(k); };
   const isAuto=(k:string)=>autoKeys.includes(k);
 
-  async function runAutofill(url:string){
-    if(!SOCIAL_RE.test(url) || lastUrl.current===url) return;
-    lastUrl.current=url;
-    setAf({status:'loading', msg:'讀取貼文、上網查資料中…約需 30 秒'});
-    const hadPhotos = (fRef.current.photos||[]).length > 0;
-    setCands([]); setCandIdx(0);
+  // ── 多間店：一篇貼文介紹好幾間時，先勾要存哪幾間，再一間一間存 ──
+  const [multi,setMulti] = useState<any>(null); // { url, country, caption, all, list:[{name,hint,photos}], sel, step:'pick'|'run', queue, pos }
+  const [morePhotos,setMorePhotos] = useState(false);
+  const prefetch = useRef<any>({});
+  const runToken = useRef(0);
+  const convertedRef = useRef(false);
+  const topRef = useRef<HTMLDivElement>(null);
+
+  function buildCtx(country:string){
+    const geo = geoDataProp||GEO;
+    const cities:any = {}; Object.keys(geo).forEach(c=>{ cities[c]=Object.keys(geo[c]||{}); });
+    // 已選國家時，把該國各城市的商圈清單給 AI 挑（沒選國家就讓 AI 自己寫）
+    const areas:any = {};
+    if(country && geo[country]) Object.entries(geo[country]).forEach(([city,dists]:any)=>{ areas[city]=Array.from(new Set(Object.values(dists||{}).flat())); });
+    return { countries, cities, areas, types };
+  }
+  function fetchAutofill(url:string, country:string, target:any, skipImages:boolean){
+    return fetch('/api/autofill', { method:'POST', headers:{'content-type':'application/json'},
+      body: JSON.stringify({ url, country, ...buildCtx(country), skipImages, target }) })
+      .then(async res=>{ let d:any=null; try{ d=await res.json(); }catch(_){} return { ok:res.ok, status:res.status, d }; })
+      .catch(()=>({ ok:false, status:0, d:null }));
+  }
+  function applyAutofill(r:any, hadPhotos:boolean){
     try{
-      const geo = geoDataProp||GEO;
-      const cities:any = {}; Object.keys(geo).forEach(c=>{ cities[c]=Object.keys(geo[c]||{}); });
-      // 已選國家時，把該國各城市的商圈清單給 AI 挑（沒選國家就讓 AI 自己寫）
-      const areas:any = {}; const ac = fRef.current.country;
-      if(ac && geo[ac]) Object.entries(geo[ac]).forEach(([city,dists]:any)=>{ areas[city]=Array.from(new Set(Object.values(dists||{}).flat())); });
-      const res = await fetch('/api/autofill', { method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ url, country: fRef.current.country, countries, cities, areas, types, skipImages: hadPhotos }) });
-      let d:any = {};
-      try{ d = await res.json(); }catch(_){ setAf({status:'error', msg:`伺服器錯誤（代碼 ${res.status}），請稍後再試`}); return; }
+      if(!r.d){ setAf({status:'error', msg: r.status ? `伺服器錯誤（代碼 ${r.status}），請稍後再試` : '自動填寫失敗，請確認網路後再試'}); return; }
+      const d:any = r.d;
       if(d.cover || d.caption){
         setPreview({ cover: hadPhotos ? fRef.current.photos[0] : (d.cover||''), caption:d.caption||'', count: hadPhotos ? fRef.current.photos.length : (d.images||[]).length } as any);
         const imgs:string[] = (d.images && d.images.length ? d.images : (d.cover ? [d.cover] : []));
         const fresh = imgs.filter((u:string)=>!(fRef.current.photos||[]).includes(u));
         if(fresh.length){ const n={...fRef.current, photos:[...fresh, ...(fRef.current.photos||[])]}; setF(n); fRef.current=n; }
       }
-      if(!res.ok || d.error){ setAf({status:'error', msg:(d.error||'自動填寫失敗')+`（代碼 ${res.status}）`}); return; }
+      if(!r.ok || d.error){ setAf({status:'error', msg:(d.error||'自動填寫失敗')+`（代碼 ${r.status}）`}); return; }
       const fl = d.fields||{};
       const x:any = fRef.current;
       const n:any = {...x};
@@ -2627,6 +2704,90 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
     }catch(e:any){
       setAf({status:'error', msg:'自動填寫失敗，請確認網路後再試'});
     }
+  }
+
+  async function runAutofill(url:string){
+    if(!SOCIAL_RE.test(url) || lastUrl.current===url) return;
+    lastUrl.current=url;
+    const tok = ++runToken.current;
+    const hadPhotos = (fRef.current.photos||[]).length > 0;
+    setCands([]); setCandIdx(0);
+    const target:any = fRef.current.target_hint || null;
+    // 照片 2 張以上：先看這篇是不是介紹了好幾間（店名常印在照片上）
+    if(!target && (fRef.current.photos||[]).length>=2){
+      setAf({status:'loading', msg:'看看這篇介紹了幾間店…'});
+      try{
+        const all:string[] = [...(fRef.current.photos||[])];
+        const res = await fetch('/api/autofill', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ mode:'scan', url, photos: all }) });
+        const d:any = await res.json().catch(()=>({}));
+        if(tok!==runToken.current) return;
+        const places = (d.places||[]).map((p:any)=>({ name:p.name, hint:p.hint||'', photos:(p.photos||[]).map((n:number)=>all[n-1]).filter(Boolean) }));
+        if(places.length>=2){
+          setPreview({ cover: all[0], caption: d.caption||'', count: all.length } as any);
+          setMulti({ url, country: fRef.current.country||'', caption: d.caption||'', all, list: places, sel: places.map(()=>true), step:'pick', queue:[], pos:0 });
+          setAf({status:'done', msg:''});
+          return;
+        }
+      }catch(_){}
+    }
+    setAf({status:'loading', msg:'讀取貼文、上網查資料中…約需 30 秒'});
+    const r = await fetchAutofill(url, fRef.current.country||'', target, hadPhotos);
+    if(tok!==runToken.current) return;
+    applyAutofill(r, hadPhotos);
+  }
+
+  const BLANK:any = { name:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",rating:0,review:"",branches:[],google_place_id:"",review_highlights:null,cover_position:null };
+  function prefetchItem(m:any, pos:number){
+    if(!m || pos<0 || pos>=m.queue.length) return null;
+    const k = m.queue[pos];
+    if(!prefetch.current[k]){ const it=m.list[k]; prefetch.current[k] = fetchAutofill(m.url, m.country||fRef.current.country||'', { name:it.name, hint:it.hint }, true); }
+    return prefetch.current[k];
+  }
+  async function loadMultiItem(m:any, pos:number){
+    const tok = ++runToken.current;
+    const it = m.list[m.queue[pos]];
+    const base:any = { ...fRef.current, ...BLANK, country: m.country||fRef.current.country||'', source_url: m.url, photos:[...it.photos] };
+    delete base.target_hint;
+    setF(base); fRef.current=base;
+    setAutoKeys([]); setCands([]); setCandIdx(0); setGuess(false); setRecEdit(false); setSaving(false); setPhotoSheet(null); setMorePhotos(false);
+    setPreview({ cover: it.photos[0]||'', caption: it.hint || m.caption, count: it.photos.length } as any);
+    setAf({status:'loading', msg:`整理「${it.name}」中…約需 30 秒`});
+    try{ topRef.current?.scrollIntoView({ block:'start' }); }catch(_){}
+    const pr = prefetchItem(m, pos);
+    prefetchItem(m, pos+1); // 下一間先開始整理，按完儲存通常就好了
+    const r = await pr;
+    if(tok!==runToken.current) return;
+    applyAutofill(r, true);
+  }
+  function startMulti(){
+    const queue = (multi.sel||[]).map((v:boolean,i:number)=>v?i:-1).filter((i:number)=>i>=0);
+    if(!queue.length) return;
+    const m = { ...multi, step:'run', queue, pos:0 };
+    setMulti(m); loadMultiItem(m, 0);
+  }
+  async function treatAsOne(){
+    const m = multi; setMulti(null);
+    const tok = ++runToken.current;
+    setAf({status:'loading', msg:'讀取貼文、上網查資料中…約需 30 秒'});
+    const r = await fetchAutofill(m.url, fRef.current.country||'', null, true);
+    if(tok!==runToken.current) return;
+    applyAutofill(r, true);
+  }
+  function nextMulti(){
+    const m = multi; if(!m || m.step!=='run' || m.pos+1>=m.queue.length) return false;
+    const n = { ...m, pos:m.pos+1 }; setMulti(n); loadMultiItem(n, n.pos); return true;
+  }
+  function skipMulti(){ if(!nextMulti()) onBack(); }
+  async function restToInbox(){
+    const m = multi; if(!m || !onAddInbox) return;
+    const rest = m.queue.slice(m.pos);
+    if(!window.confirm(`把這間和後面的店（共 ${rest.length} 間）丟進待整理？`)) return;
+    for(const k of rest){
+      const it = m.list[k];
+      await onAddInbox(m.country||fRef.current.country||'', m.url, `📍${it.name}${it.hint?'｜'+it.hint:''}`, it.photos);
+    }
+    if(convertInboxId && onConverted && !convertedRef.current){ convertedRef.current=true; onConverted(convertInboxId); }
+    onBack();
   }
 
   // 從待整理或捷徑帶連結進來：一打開就自動填寫
@@ -2728,7 +2889,8 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       onAutoAddNb(f.country, f.city, f.district, f.neighborhood);
     }
     onAdd({...f, id:String(Date.now()), status:"wishlist"});
-    if(convertInboxId && onConverted) onConverted(convertInboxId);
+    if(convertInboxId && onConverted && !convertedRef.current){ convertedRef.current=true; onConverted(convertInboxId); }
+    if(nextMulti()) return; // 多間店：換下一間
     onBack();
   }
 
@@ -2737,14 +2899,22 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
 
   return (
     <div style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
+      <div ref={topRef} />
       <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 16px)", paddingBottom:"16px", paddingLeft:"20px", paddingRight:"20px", display:"flex", alignItems:"flex-end", justifyContent:"space-between" }}>
         <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:16, cursor:"pointer", padding:0 }}>取消</button>
-        <div style={{ fontSize:17, fontWeight:600 }}>新增收藏</div>
+        <div style={{ fontSize:17, fontWeight:600 }}>{multi?.step==='run' ? `第 ${multi.pos+1}／${multi.queue.length} 間` : '新增收藏'}</div>
         <button onClick={handleSave} disabled={!f.name.trim()||saving}
           style={{ background:"none", border:"none", color:f.name.trim()&&!saving?"#007AFF":"#C7C7CC", fontSize:16, fontWeight:600, cursor:f.name.trim()?"pointer":"default", padding:0 }}>
           {saving?"儲存中...":"儲存"}
         </button>
       </div>
+      {multi?.step==='run' && (
+        <div style={{ background:"#FDF8F3", borderTop:"1px solid #EDE8E2", padding:"8px 20px", display:"flex", alignItems:"center", gap:12 }}>
+          <div style={{ flex:1, minWidth:0, fontSize:13, color:"#6b655c", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>📍 {multi.list[multi.queue[multi.pos]]?.name}</div>
+          <button onClick={skipMulti} style={{ background:"none", border:"none", color:"#007AFF", fontSize:13, cursor:"pointer", padding:0, flexShrink:0 }}>略過這間</button>
+          {onAddInbox && <button onClick={restToInbox} style={{ background:"none", border:"none", color:"#007AFF", fontSize:13, cursor:"pointer", padding:0, flexShrink:0 }}>剩下的丟進待整理</button>}
+        </div>
+      )}
       <div style={{ padding:"16px 20px 40px" }}>
 
         {/* 來源連結（最上方）：貼上 IG / Threads 連結自動填寫 */}
@@ -2902,8 +3072,21 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
             <input ref={photoInputRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={handlePhotoAdd} />
           </div>
           {(f.photos||[]).length>0 && <div style={{ fontSize:11, color:"#A69C90", marginTop:8 }}>點照片可以換封面、調整封面範圍</div>}
+          {multi?.step==='run' && (multi.all||[]).length>0 && (
+            <button onClick={()=>setMorePhotos(true)} style={{ marginTop:8, background:"none", border:"none", color:"#007AFF", fontSize:13, cursor:"pointer", padding:0 }}>＋ 從這篇貼文加照片</button>
+          )}
         </div>
       </div>
+      {multi?.step==='pick' && (
+        <MultiPlacePicker m={multi}
+          onToggle={(i:number)=>setMulti((m:any)=>({ ...m, sel:m.sel.map((v:boolean,j:number)=>j===i?!v:v) }))}
+          onAll={(v:boolean)=>setMulti((m:any)=>({ ...m, sel:m.sel.map(()=>v) }))}
+          onStart={startMulti} onOne={treatAsOne} onCancel={onBack} />
+      )}
+      {morePhotos && multi && (
+        <PostPhotoPicker all={multi.all||[]} chosen={f.photos||[]} onClose={()=>setMorePhotos(false)}
+          onToggle={(u:string)=>setF((x:any)=>{ const has=(x.photos||[]).includes(u); return { ...x, photos: has ? (x.photos||[]).filter((p:string)=>p!==u) : [...(x.photos||[]), u] }; })} />
+      )}
       {photoSheet!==null && (f.photos||[])[photoSheet] && (
         <PhotoActionSheet photo={(f.photos||[])[photoSheet]} isCover={photoSheet===0}
           onClose={()=>setPhotoSheet(null)}
@@ -4665,7 +4848,7 @@ export default function App() {
   // 捷徑在手機上抓好的原圖：?photos=網址1,網址2（只接受自己照片區的網址）
   function shortcutPhotos(sp:URLSearchParams):string[]{
     const raw=sp.get('photos')||'';
-    return raw.split(',').map(x=>x.trim()).filter(x=>/^https:\/\/[^/]+\/storage\/v1\/object\/public\/photos\//.test(x)).slice(0,10);
+    return raw.split(',').map(x=>x.trim()).filter(x=>/^https:\/\/[^/]+\/storage\/v1\/object\/public\/photos\//.test(x)).slice(0,20);
   }
   useEffect(()=>{
     if(shortcutHandled.current) return;
@@ -4703,8 +4886,9 @@ export default function App() {
   },[]);
 
   // ── 待整理：新增 / 刪除 ──
-  async function handleAddInbox(country:string, url:string, note:string){
-    const payload={ country, url, note:note||'' };
+  async function handleAddInbox(country:string, url:string, note:string, photos?:string[]){
+    const payload:any={ country, url, note:note||'' };
+    if(Array.isArray(photos) && photos.length) payload.photos=photos;
     const {data,error}=await sb.from('inbox_links').insert([payload]).select().single();
     if(!error && data) setInbox(xs=>[data,...xs]);
     else { console.error('handleAddInbox error:', error); alert('存入失敗：' + (error?.message || '請確認已建立 inbox_links 資料表')); }
@@ -4719,7 +4903,9 @@ export default function App() {
   function openNotes(){ setNotesConvertDraft(null); setHistory(h=>[...h,"notes"]); }
   // 待整理 → 轉成收藏地點（帶入國家＋網址）
   function convertInboxToPlace(it:any){
-    setAddInitial({ country: it.country||"", source_url: it.url, photos: Array.isArray(it.photos)? it.photos : [] });
+    const m = String(it.note||'').match(/^📍([^｜\n]+)(?:｜(.*))?/);
+    const target_hint = m ? { name:m[1].trim(), hint:(m[2]||'').trim() } : null;
+    setAddInitial({ country: it.country||"", source_url: it.url, photos: Array.isArray(it.photos)? it.photos : [], ...(target_hint?{target_hint}:{}) });
     setAddConvertInboxId(it.id);
     setHistory(h=>[...h,"add"]);
   }
@@ -4977,7 +5163,7 @@ export default function App() {
           WebkitOverflowScrolling:"touch",
           background:"#F5F0EB",
         }}>
-          {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} onAutoAddNb={autoAddNeighborhood} initial={addInitial} convertInboxId={addConvertInboxId} onConverted={(id:string)=>handleDeleteInbox(id)} />}
+          {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} onAutoAddNb={autoAddNeighborhood} initial={addInitial} convertInboxId={addConvertInboxId} onConverted={(id:string)=>handleDeleteInbox(id)} onAddInbox={handleAddInbox} />}
           {page==="country"&&<CountryPage country={selectedCountry!} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}}
             cityOrder={cityOrderByCountry[selectedCountry!]||[]}
             onUpdateCityOrder={async (country:string, list:string[])=>{ const next={...cityOrderByCountry,[country]:list}; setCityOrderByCountry(next); await saveSettings({city_order_by_country:next}); }} />}

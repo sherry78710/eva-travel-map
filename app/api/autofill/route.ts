@@ -29,6 +29,7 @@ function bumpFail(r: string, what: string) {
 // 每日上限（台灣時間每天 0 點重置）
 const LIMIT_AI = 30;
 const LIMIT_SEARCH = 50;
+const LIMIT_SCAN = 60; // 「這篇介紹了幾間」看照片判斷，很便宜，獨立計數
 
 const ALLOWED = ['instagram.com', 'www.instagram.com', 'threads.com', 'www.threads.com', 'threads.net', 'www.threads.net'];
 
@@ -235,6 +236,11 @@ ${typeRules || '（無）'}
 - highlights.good 3 到 5 條、caution 0 到 3 條。只寫多個來源重複提到的共通點，不要編造。
 - caution 只寫營業時間看不出來的事，例如：排隊很久、只收現金、要預約、限時用餐、座位少、價位偏高。不要寫營業時間、公休日、地址。
 - 所有說明文字用繁體中文。查不到就照貼文內容填，不要編造。`;
+  const target = ctx.target && ctx.target.name ? ctx.target : null;
+  const targetNote = target ? `
+
+★ 這則貼文介紹了好幾間店，這次只整理其中這一間：「${target.name}」${target.hint ? `（貼文對這間的說明：${target.hint}）` : ''}。
+name、recommendations、note、highlights 都只寫這一間，其他店完全不要管；recommendations 的「貼文提到的」以上面這段說明為準。` : '';
   const user = `countries: ${JSON.stringify(ctx.countries)}
 cities: ${JSON.stringify(ctx.cities)}
 areas（各城市已有的商圈）: ${JSON.stringify(ctx.areas || {})}
@@ -242,7 +248,7 @@ types: ${JSON.stringify(ctx.types)}
 使用者已選的國家: ${ctx.country || '（未選）'}
 
 貼文標題: ${post.title}
-貼文內容: ${post.desc}`;
+貼文內容: ${post.desc}${targetNote}`;
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
@@ -264,6 +270,47 @@ types: ${JSON.stringify(ctx.types)}
   if (start < 0 || end <= start) throw new Error('AI 沒有回傳可用的資料');
   try { return JSON.parse(text.slice(start, end + 1)); }
   catch { throw new Error('AI 回傳格式錯誤'); }
+}
+
+// ── 看照片＋內文：這篇介紹了幾間店？每張照片屬於哪一間？ ──
+// 店名常常印在照片上（不在內文），所以要讓 AI 看圖
+const OWN_PHOTO_RE = /^https:\/\/[^/]+\/storage\/v1\/object\/public\/photos\//;
+async function scanPlaces(caption: string, photos: string[]) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error('缺少 ANTHROPIC_API_KEY');
+  const content: any[] = [];
+  photos.forEach((u, i) => {
+    content.push({ type: 'text', text: `照片 ${i + 1}：` });
+    content.push({ type: 'image', source: { type: 'url', url: u } });
+  });
+  content.push({ type: 'text', text: `貼文內容：\n${caption || '（沒有文字）'}\n\n照片共 ${photos.length} 張。` });
+  const system = `你是旅遊美食收藏助理。判斷這則 IG / Threads 貼文介紹了哪些實體店家或景點。店名常常印在照片上的小字（例如「📍店名」），也可能寫在內文。
+只輸出一個 JSON 物件，不要任何其他文字、不要 Markdown：
+{"places":[{"name":"店名，照照片或內文上的寫法","hint":"照片上或內文對這間的說明（推薦什麼、特色、分店），照原文，60 字內","photos":[這間店的照片編號，從 1 開始]}]}
+規則：
+- 依貼文出現的順序列出，最多 20 間。只列實體店家或景點，不要列城市、商圈、品牌總稱。
+- 每張照片最多屬於一間店。照片上沒寫店名時，依前後照片和畫面判斷屬於哪一間；判斷不出來就不要放進任何一間。
+- 封面、總覽、拼貼圖這類不屬於單一間店的照片，不要放進任何一間。
+- 同一間店出現多次（例如照片 3、4、5 都是同一間），合併成一筆，photos 列出全部。
+- 整篇只介紹一間店，就只回傳一筆。`;
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 2000, system, messages: [{ role: 'user', content }] }),
+    signal: AbortSignal.timeout(40000),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error?.message || 'AI 呼叫失敗');
+  const text = (data.content || []).map((c: any) => c.type === 'text' ? c.text : '').join('').replace(/```json|```/g, '').trim();
+  const a = text.indexOf('{'), b = text.lastIndexOf('}');
+  if (a < 0 || b <= a) throw new Error('AI 沒有回傳可用的資料');
+  const j = JSON.parse(text.slice(a, b + 1));
+  const used = new Set<number>();
+  return (Array.isArray(j.places) ? j.places : []).slice(0, 20).map((p: any) => {
+    const idx = (Array.isArray(p.photos) ? p.photos : []).map((n: any) => Math.round(Number(n))).filter((n: number) => n >= 1 && n <= photos.length && !used.has(n));
+    idx.forEach((n: number) => used.add(n));
+    return { name: String(p.name || '').trim().slice(0, 80), hint: String(p.hint || '').trim().slice(0, 120), photos: idx };
+  }).filter((p: any) => p.name);
 }
 
 async function searchGoogle(query: string, country: string) {
@@ -302,6 +349,24 @@ export async function POST(req: NextRequest) {
   try { host = new URL(url).hostname.toLowerCase(); } catch {}
   if (!ALLOWED.includes(host)) return NextResponse.json({ error: '只支援 Instagram / Threads 連結' }, { status: 400 });
 
+  // 掃描模式：只判斷這篇介紹了幾間、每張照片屬於哪一間（不上網搜尋）
+  if (body.mode === 'scan') {
+    const photos: string[] = (Array.isArray(body.photos) ? body.photos : []).filter((u: any) => typeof u === 'string' && OWN_PHOTO_RE.test(u)).slice(0, 20);
+    const post = await readPost(url);
+    const caption = post ? [post.title, post.desc].filter(Boolean).join('\n') : '';
+    if (!photos.length && !caption) return NextResponse.json({ places: [], caption: '' });
+    const r = await bump('scan', LIMIT_SCAN);
+    if (r !== 'ok') return NextResponse.json({ places: [], caption: post?.desc || '', note: r === 'limit' ? '今日多間判斷次數已用完，先當成一間整理' : r });
+    try {
+      const places = await scanPlaces(caption, photos);
+      console.log('scan', JSON.stringify({ photos: photos.length, places: places.length }));
+      return NextResponse.json({ places, caption: post?.desc || '' });
+    } catch (e: any) {
+      console.error('scan', e);
+      return NextResponse.json({ places: [], caption: post?.desc || '', note: '判斷不出有幾間，先當成一間整理' });
+    }
+  }
+
   const post = await readPost(url);
   if (!post) {
     const site = /threads\./i.test(host) ? 'Threads' : 'IG';
@@ -328,6 +393,7 @@ export async function POST(req: NextRequest) {
   try {
     fields = await askClaude(post, {
       countries: body.countries || [], cities: body.cities || {}, areas: body.areas || {}, types: body.types || [], country: body.country || '',
+      target: body.target && typeof body.target.name === 'string' ? { name: body.target.name.slice(0, 80), hint: String(body.target.hint || '').slice(0, 120) } : null,
     });
   } catch (e: any) {
     return NextResponse.json({ cover, caption: post.desc, error: 'AI 整理失敗：' + (e?.message || e) }, { status: 502 });
