@@ -680,15 +680,18 @@ function PlaceRow({ place, onClick }) {
   const closedStatus = checkTodayClosed(place.opening_hours);
   return (
     <button onClick={onClick} style={{ width:"100%", display:"flex", alignItems:"center", gap:14, padding:"14px 16px", background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
-      {coverPhoto ? (
-        <div style={{ width:44, height:44, borderRadius:12, overflow:"hidden", flexShrink:0 }}>
-          <img src={coverPhoto} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", ...coverStyle(coverPhoto, place.cover_position) }} />
-        </div>
-      ) : (
-        <PlaceIcon status={place.status} />
-      )}
+      <div style={{ position:"relative", flexShrink:0 }}>
+        {coverPhoto ? (
+          <div style={{ width:44, height:44, borderRadius:12, overflow:"hidden" }}>
+            <img src={coverPhoto} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", ...coverStyle(coverPhoto, place.cover_position) }} />
+          </div>
+        ) : (
+          <PlaceIcon status={place.status} />
+        )}
+        {isMustGo(place) && <MustGoBadge corner="tl" />}
+      </div>
       <div style={{ flex:1 }}>
-        <div style={{ fontSize:15, fontWeight:600, color:"#000", marginBottom:2 }}>{isMustGo(place) && <span style={{ marginRight:4 }}>{MUST_GO_CFG.markOn}</span>}{place.name}{place._branchName ? ` · ${place._branchName}` : ""}</div>
+        <div style={{ fontSize:15, fontWeight:600, color:"#000", marginBottom:2 }}>{place.name}{place._branchName ? ` · ${place._branchName}` : ""}</div>
         <div style={{ fontSize:12, color:"#8E8E93" }}>{[place.district, place.neighborhood].filter(Boolean).join(" ")}{place.types?.[0] ? ` · ${place.types[0]}` : ""}</div>
         {place.note && <div style={{ fontSize:11, color:"#636366", marginTop:2, fontStyle:"italic" }}>{place.note}</div>}
         {closedStatus==='closed' && <span style={{ display:"inline-block", marginTop:4, padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:500, background:"#F5E6E4", color:"#A85550" }}>● 今日公休</span>}
@@ -990,8 +993,28 @@ function GeoEditor({ countries, geoData, onUpdateGeo }) {
   );
 }
 
-function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCountries, onUpdateTypes, onRenameType, onUpdateOrder, onUpdateGeo }) {
+function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCountries, onUpdateTypes, onRenameType, onUpdateOrder, onUpdateGeo, onReload }:any) {
   const [tab, setTab] = useState("countries");
+  // ── 資料整理：幫舊收藏補上 Google 編號 ──
+  const [bf,setBf] = useState<any>({ status:'idle' });
+  async function runBackfill(){
+    setBf({ status:'loading' });
+    try{
+      const res = await fetch('/api/backfill-ids', { method:'POST', headers:{'content-type':'application/json'}, body:'{}' });
+      const d = await res.json().catch(()=>({}));
+      if(!res.ok || d.error){ setBf({ status:'error', msg:d.error||`失敗（代碼 ${res.status}）` }); return; }
+      setBf({ status:'done', ...d });
+      if(onReload) onReload();
+    }catch(_){ setBf({ status:'error', msg:'連線失敗，請稍後再試' }); }
+  }
+  async function pickBackfill(item:any, cand:any){
+    if(cand){
+      const { error } = await sb.from('places').update({ google_place_id:cand.id }).eq('id', item.id);
+      if(error){ alert('儲存失敗：'+(error.message||'')); return; }
+    }
+    setBf((b:any)=>({ ...b, review:(b.review||[]).filter((r:any)=>r.id!==item.id), picked:(b.picked||0)+(cand?1:0) }));
+    if(cand && onReload) onReload();
+  }
   const [expandedCountry, setExpandedCountry] = useState<string|null>(null);
   const [expandedCity, setExpandedCity] = useState<string|null>(null);
   const [newCountry, setNewCountry] = useState("");
@@ -1100,13 +1123,48 @@ function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCou
           <div style={{ width:40 }} />
         </div>
         <div style={{ display:"flex" }}>
-          {[["countries","國家與商圈"],["types","類別"]].map(([k,l]) => (
+          {[["countries","國家與商圈"],["types","類別"],["data","資料整理"]].map(([k,l]) => (
             <button key={k} onClick={()=>setTab(k)} style={{ flex:1, padding:"10px 0", border:"none", background:"none", borderBottom:tab===k?"2px solid #000":"2px solid transparent", color:tab===k?"#000":"#8E8E93", fontSize:14, fontWeight:tab===k?600:400, cursor:"pointer" }}>{l}</button>
           ))}
         </div>
       </div>
 
       <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", padding:"16px 20px 40px" }}>
+        {/* ── 資料整理 ── */}
+        {tab==="data" && (
+          <div>
+            <div style={{ background:"#FDF8F3", borderRadius:16, padding:"14px 16px", marginBottom:12 }}>
+              <div style={{ fontSize:15, fontWeight:600 }}>幫舊收藏補上 Google 編號</div>
+              <div style={{ fontSize:13, color:"#6b655c", marginTop:4, lineHeight:1.6 }}>以前手動新增的收藏沒有 Google 編號，比對重複時比較不準。會用店名＋地址去 Google 找，地址對得上的自動補上，對不上的列出來讓你確認。打開地圖還是照原本的方式（韓國用 Naver）。</div>
+              <button onClick={runBackfill} disabled={bf.status==='loading'} style={{ marginTop:12, width:"100%", padding:12, borderRadius:12, border:"none", background:bf.status==='loading'?"#C7C7CC":"#3C3C3C", color:"#fff", fontSize:15, fontWeight:600, cursor:"pointer" }}>{bf.status==='loading'?"處理中…可能要 1 分鐘":"開始"}</button>
+              {bf.status==='error' && <div style={{ fontSize:13, color:"#C0392B", marginTop:8 }}>{bf.msg}</div>}
+              {bf.status==='done' && (
+                <div style={{ fontSize:13, color:"#0F6E56", marginTop:10, lineHeight:1.6 }}>
+                  自動補上 {(bf.applied||[]).length} 筆{bf.picked?`，你確認了 ${bf.picked} 筆`:""}・需要確認 {(bf.review||[]).length} 筆・Google 找不到 {(bf.notFound||[]).length} 筆
+                  {bf.more ? <div style={{ color:"#854F0B" }}>還有沒處理完的，明天再按一次「開始」</div> : null}
+                </div>
+              )}
+            </div>
+            {bf.status==='done' && (bf.review||[]).map((it:any)=>(
+              <div key={it.id} style={{ background:"#FDF8F3", borderRadius:16, padding:"12px 16px", marginBottom:10 }}>
+                <div style={{ fontSize:12, color:"#8E8E93" }}>你的收藏</div>
+                <div style={{ fontSize:15, fontWeight:600 }}>{it.name}</div>
+                <div style={{ fontSize:12, color:"#6b655c" }}>{it.address||"（沒有地址）"}</div>
+                <div style={{ fontSize:12, color:"#8E8E93", marginTop:10 }}>Google 上是這間嗎？</div>
+                {(it.cands||[]).map((c:any)=>(
+                  <div key={c.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderTop:"1px solid #EDE8E2", marginTop:6 }}>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, fontWeight:500 }}>{c.name}</div>
+                      <div style={{ fontSize:12, color:"#6b655c" }}>{c.address}</div>
+                    </div>
+                    <button onClick={()=>pickBackfill(it,c)} style={{ flexShrink:0, padding:"6px 10px", borderRadius:10, border:"none", background:"#3C3C3C", color:"#fff", fontSize:13, cursor:"pointer" }}>是這間</button>
+                  </div>
+                ))}
+                <button onClick={()=>pickBackfill(it,null)} style={{ marginTop:6, background:"none", border:"none", color:"#8E8E93", fontSize:13, cursor:"pointer", padding:0 }}>都不是，跳過</button>
+              </div>
+            ))}
+          </div>
+        )}
         {/* ── 國家與商圈 ── */}
         {tab==="countries" && (
           <>
@@ -1346,13 +1404,14 @@ function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onT
             {places.map((p:any)=>(
               <button key={p.id} onClick={()=>onNav("detail",p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left", display:"flex", flexDirection:"column", justifyContent:"flex-start", alignItems:"stretch", padding:0 }}>
                 <div style={{ height:110, flexShrink:0, background:p.photos?.[0]?"none":"#EDE8E2", position:"relative", overflow:"hidden" }}>
+                  {isMustGo(p) && <MustGoBadge corner="tr" />}
                   {p.photos?.[0]
                     ? <img src={p.photos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", ...coverStyle(p.photos[0], p.cover_position) }} />
                     : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>{p.types?.[0]==="餐廳"?"🍽️":p.types?.[0]==="咖啡廳"?"☕":p.types?.[0]==="景點"?"🌸":p.types?.[0]==="市場"?"🛒":"📍"}</div>
                   }
                 </div>
                 <div style={{ padding:"8px 10px 10px" }}>
-                  <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{isMustGo(p) && <span style={{ marginRight:3 }}>{MUST_GO_CFG.markOn}</span>}{p.name}</div>
+                  <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
                   <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
                   {p.note && <div style={{ fontSize:10, color:"#636366", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
                   {(()=>{const cs=checkTodayClosed(p.opening_hours);const lbl=getClosedDaysLabel(p.opening_hours);return cs==='closed'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F5E6E4",color:"#A85550"}}>● 今日公休</span>:cs==='uncertain'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F0EBE4",color:"#9C8878"}}>? 不確定</span>:lbl?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#EDE8E2",color:"#8E8E93"}}>{lbl}</span>:null;})()}
@@ -1527,13 +1586,14 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
                   {nbPlaces.map((p:any,gi:number)=>(
                     <button key={p.id+'_'+gi} onClick={()=>onSelect(p._origPlace||p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left", display:"flex", flexDirection:"column", justifyContent:"flex-start", alignItems:"stretch", padding:0 }}>
                       <div style={{ height:110, flexShrink:0, background:"#EDE8E2", position:"relative", overflow:"hidden" }}>
+                        {isMustGo(p) && <MustGoBadge corner="tr" />}
                         {p.photos?.[0]
                           ? <img src={p.photos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", ...coverStyle(p.photos[0], p.cover_position) }} />
                           : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>{p.types?.[0]==="餐廳"?"🍽️":p.types?.[0]==="咖啡廳"?"☕":p.types?.[0]==="景點"?"🌸":p.types?.[0]==="市場"?"🛒":"📍"}</div>
                         }
                       </div>
                       <div style={{ padding:"8px 10px 10px" }}>
-                        <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{isMustGo(p) && <span style={{ marginRight:3 }}>{MUST_GO_CFG.markOn}</span>}{p.name}{p._branchName ? ` · ${p._branchName}` : ""}</div>
+                        <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}{p._branchName ? ` · ${p._branchName}` : ""}</div>
                         <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
                         {p.note && <div style={{ fontSize:10, color:"#636366", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
                         {(()=>{const cs=checkTodayClosed(p.opening_hours);const lbl=getClosedDaysLabel(p.opening_hours);return cs==='closed'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F5E6E4",color:"#A85550"}}>● 今日公休</span>:cs==='uncertain'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F0EBE4",color:"#9C8878"}}>? 不確定</span>:lbl?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#EDE8E2",color:"#8E8E93"}}>{lbl}</span>:null;})()}
@@ -2369,6 +2429,111 @@ function stableStr(v:any):string{
   return JSON.stringify(v===undefined?null:v);
 }
 
+// ── 重複收藏判斷：店名、地址整理後再比對（韓國、台灣的舊資料大多沒有 Google 編號）──
+function normName(s:any){
+  return String(s||'').replace(/[（(][^）)]*[）)]/g,'').replace(/[\s・·\-–—_.,，。、'"「」『』!！?？]/g,'').toLowerCase();
+}
+function normAddr(s:any){
+  let t = String(s||'').toLowerCase();
+  t = t.replace(/[０-９]/g,(c:string)=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/[－ー−‐―–—]/g,'-');
+  t = t.replace(/日本|韓國|韓国|대한민국|台灣|台湾|臺灣|taiwan|japan|south korea|korea/g,'');
+  t = t.replace(/〒?\d{3}-\d{4}/g,'');
+  // 樓層先拿掉（要在去空格之前，不然「123 1층」會黏成「1231층」）
+  t = t.replace(/(^|[\s号號,，])b?\d+\s*(f|階|층|樓|楼)(?=$|[\s,，])/g,'$1');
+  t = t.replace(/丁目|番地|番/g,'-').replace(/[号號]/g,'');
+  t = t.replace(/[\s,，、]/g,'').replace(/-+/g,'-').replace(/-$/,'');
+  return t;
+}
+// 地址的「核心」：韓國取道路名＋門牌，其他取最後一組門牌號碼和它前面兩個字
+function addrKey(s:any){
+  const t = normAddr(s);
+  if(/[가-힣]/.test(t)){
+    // 韓國：去掉「市／區（구、군）」前面的部分，只留「道路名＋門牌」
+    let r = t.replace(/^.*(구|군)(?=[가-힣])/,'');
+    if(r===t) r = t.replace(/^.*시(?=[가-힣])/,'');
+    const kr = r.match(/^([가-힣0-9]+?(?:로|길)(?:\d+번?길)?)(\d+(?:-\d+)?)/);
+    if(kr) return 'kr:'+kr[1]+kr[2];
+  }
+  const m = t.match(/([^\d-]{2})(\d+(?:-\d+){1,3})(?!.*\d+-\d)/);
+  return m ? m[1]+m[2] : '';
+}
+function addrMatch(a:any, b:any){
+  const A = normAddr(a), B = normAddr(b);
+  if(!A || !B) return false;
+  const [s,l] = A.length<=B.length ? [A,B] : [B,A];
+  if(s.length>=10 && /\d/.test(s) && l.includes(s)) return true;
+  const ka = addrKey(a), kb = addrKey(b);
+  return !!ka && ka===kb;
+}
+function nameSim(a:any, b:any){
+  const A = normName(a), B = normName(b);
+  if(!A || !B) return false;
+  if(A===B) return true;
+  return Math.min(A.length,B.length)>=2 && (A.includes(B) || B.includes(A));
+}
+
+// 這筆收藏的所有來源（舊資料沒有 sources 就用 source_url）
+function getSources(p:any):{url:string, at:string}[]{
+  if(Array.isArray(p?.sources) && p.sources.length) return p.sources.filter((x:any)=>x && x.url);
+  return p?.source_url ? [{ url:p.source_url, at:p.created_at||'' }] : [];
+}
+function syncSources(u:any){
+  const s = getSources(u).map(x=>({...x}));
+  const url = (u.source_url||'').trim();
+  if(s.length<=1) return url ? [{ url, at: s[0]?.at || new Date().toISOString() }] : [];
+  if(url && !s.some(x=>x.url===url)) s[0] = { ...s[0], url };
+  return s;
+}
+function srcHandle(url:string){ const m=(url||'').match(/\/(@[^/?#]+)/); return m ? m[1] : ''; }
+function shortDate(at:string){ const d=new Date(at); return isNaN(d.getTime()) ? '' : `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`; }
+// 新增時找出可能重複的收藏
+function findDuplicates(f:any, places:any[]){
+  const out:{ kind:'sure'|'addr'|'maybe', place:any }[] = [];
+  const names = [f.name, f.map_query].filter((x:any)=>String(x||'').trim());
+  for(const p of (places||[])){
+    if(f.country && p.country && f.country!==p.country) continue;
+    const brs = (p.branches||[]);
+    if(f.google_place_id && (p.google_place_id===f.google_place_id || brs.some((b:any)=>b.google_place_id===f.google_place_id))){ out.push({ kind:'sure', place:p }); continue; }
+    const pNames = [p.name, p.map_query, ...brs.map((b:any)=>b.name)].filter(Boolean);
+    const similar = names.some((a:any)=>pNames.some((b:any)=>nameSim(a,b)));
+    const addrs = [p.address, ...brs.map((b:any)=>b.address)].filter(Boolean);
+    if(f.address && addrs.some((a:any)=>addrMatch(f.address,a))){ out.push({ kind: similar?'sure':'addr', place:p }); continue; }
+    if(similar && (!f.city || !p.city || f.city===p.city)) out.push({ kind:'maybe', place:p });
+  }
+  const rank:any = { sure:0, maybe:1, addr:2 };
+  return out.sort((a,b)=>rank[a.kind]-rank[b.kind]);
+}
+
+// ── 營業時間：抓出「今天」那一行（Google 的格式是「星期五: 11:00 – 21:00」）──
+function todayHours(text:string){
+  const lines = String(text||'').split('\n').map(x=>x.trim()).filter(Boolean);
+  if(!lines.length) return null;
+  const zh = ['日','一','二','三','四','五','六'][new Date().getDay()];
+  const hit = lines.find(l=>l.startsWith('星期'+zh) || l.startsWith('週'+zh));
+  if(hit) return { label:`今天（週${zh}）`, text: hit.replace(/^(星期|週).[：:]\s*/,'') };
+  return lines.length===1 ? { label:'營業時間', text:lines[0] } : null;
+}
+function HoursRow({ text }:any){
+  const [open,setOpen] = useState(false);
+  const t = todayHours(text);
+  return (
+    <div style={{ borderTop:"1px solid #F0EBE5" }}>
+      <button onClick={()=>setOpen(o=>!o)} style={{ width:"100%", display:"flex", alignItems:"center", gap:8, padding:"10px 16px", background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
+        <span style={{ fontSize:13, color:"#8E8E93", flexShrink:0 }}>🕒</span>
+        <span style={{ flex:1, minWidth:0, fontSize:14, color:"#000" }}>{t ? <><span style={{ color:"#6b655c" }}>{t.label}</span> {t.text}</> : "營業時間"}</span>
+        <span style={{ fontSize:13, color:"#007AFF", flexShrink:0 }}>整週 {open?"▴":"▾"}</span>
+      </button>
+      {open && <div style={{ padding:"0 16px 12px", fontSize:14, color:"#000", lineHeight:1.7, whiteSpace:"pre-line" }}>{text}</div>}
+    </div>
+  );
+}
+
+// ── 超想去星星（只顯示在有標記、還沒去過的店）──────────────────────────────
+function MustGoBadge({ corner }:any){
+  const pos:any = corner==='tl' ? { top:-5, left:-5, width:18, height:18, fontSize:10, border:"2px solid #FDF8F3", background:"#2C2C2A" } : { top:6, right:6, width:22, height:22, fontSize:12, background:"rgba(0,0,0,0.45)" };
+  return <span aria-label="超想去" style={{ position:"absolute", zIndex:1, borderRadius:12, color:"#fff", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1, pointerEvents:"none", ...pos }}>{MUST_GO_CFG.markOn}</span>;
+}
+
 // ── 頁面記憶：國家頁、搜尋頁點進店家再返回時，保留搜尋字、篩選和捲動位置 ──
 // （同一時間只顯示一層頁面，點進詳細頁時原本的頁面會被關掉，所以存在這裡；回到首頁就清掉）
 const PAGE_MEM:any = {};
@@ -2492,6 +2657,61 @@ function PhotoActionSheet({ photo, isCover, onSetCover, onAdjust, onClose }:any)
   );
   return createPortal(ui, document.body);
 }
+// ── 看原本那筆（不離開新增頁）────────────────────────────────────────────────
+function DupPreviewSheet({ place, canMerge, merging, onMerge, onClose }:any){
+  if(typeof document==="undefined") return null;
+  const cover = place.photos?.[0];
+  const ui = (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.35)", zIndex:2000, display:"flex", flexDirection:"column", justifyContent:"flex-end" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"#F5F0EB", borderRadius:"18px 18px 0 0", maxHeight:"85vh", overflowY:"auto", padding:"16px 16px calc(env(safe-area-inset-bottom) + 14px)" }}>
+        <div style={{ fontSize:12, color:"#8E8E93", marginBottom:8 }}>原本那筆・{shortDate(place.created_at)} 收藏</div>
+        <div style={{ background:"#FDF8F3", borderRadius:14, overflow:"hidden" }}>
+          {cover && <div style={{ height:150, overflow:"hidden" }}><img src={cover} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", ...coverStyle(cover, place.cover_position) }} /></div>}
+          <div style={{ padding:"12px 14px" }}>
+            <div style={{ fontSize:17, fontWeight:700 }}>{place.name}</div>
+            <div style={{ fontSize:13, color:"#6b655c", marginTop:2 }}>{[place.city, place.district, place.neighborhood].filter(Boolean).join(" · ")}</div>
+            {place.address && <div style={{ fontSize:13, color:"#000", marginTop:8, lineHeight:1.5 }}>{place.address}</div>}
+            {place.note && <div style={{ fontSize:13, color:"#6b655c", marginTop:8, lineHeight:1.5 }}>{place.note}</div>}
+            {(place.branches||[]).length>0 && <div style={{ fontSize:12, color:"#8E8E93", marginTop:8 }}>另有 {place.branches.length} 間分店</div>}
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:10, marginTop:12 }}>
+          <button onClick={onClose} style={{ flex:1, padding:13, borderRadius:14, border:"none", background:"#EDE8E2", fontSize:15, cursor:"pointer" }}>關閉</button>
+          {canMerge && <button onClick={onMerge} disabled={merging} style={{ flex:2, padding:13, borderRadius:14, border:"none", background:"#3C3C3C", color:"#fff", fontSize:15, fontWeight:600, cursor:"pointer" }}>{merging?"合併中…":"合併到這筆"}</button>}
+        </div>
+      </div>
+    </div>
+  );
+  return createPortal(ui, document.body);
+}
+// ── 好幾個來源時，點「來源」跳出清單 ──────────────────────────────────────────
+function SourcesSheet({ sources, onClose }:any){
+  if(typeof document==="undefined") return null;
+  const ui = (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.35)", zIndex:2000, display:"flex", flexDirection:"column", justifyContent:"flex-end" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"#F5F0EB", borderRadius:"18px 18px 0 0", padding:"16px 16px calc(env(safe-area-inset-bottom) + 14px)" }}>
+        <div style={{ fontSize:16, fontWeight:600, marginBottom:10 }}>被推薦 {sources.length} 次</div>
+        <SourcesList sources={sources} />
+        <button onClick={onClose} style={{ width:"100%", marginTop:12, padding:13, borderRadius:14, border:"none", background:"#EDE8E2", fontSize:15, cursor:"pointer" }}>關閉</button>
+      </div>
+    </div>
+  );
+  return createPortal(ui, document.body);
+}
+function SourcesList({ sources }:any){
+  return (
+    <div style={{ background:"#fff", borderRadius:14, overflow:"hidden" }}>
+      {sources.map((s:any,i:number)=>{ const src=inboxSource(s.url); return (
+        <a key={i} href={s.url} target="_blank" rel="noreferrer" style={{ display:"flex", alignItems:"center", gap:10, padding:"11px 14px", borderTop:i?"1px solid #F0EBE5":"none", textDecoration:"none", color:"#000" }}>
+          <span style={{ width:24, height:24, borderRadius:7, background:src.bg, color:"#fff", fontSize:13, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{src.icon}</span>
+          <span style={{ flex:1, minWidth:0, fontSize:14, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{src.label}{srcHandle(s.url) ? `・${srcHandle(s.url)}` : ''}</span>
+          <span style={{ fontSize:12, color:"#A69C90", flexShrink:0 }}>{shortDate(s.at)}</span>
+        </a>
+      ); })}
+    </div>
+  );
+}
+
 // ── 一篇介紹好幾間：勾選要存哪幾間 ─────────────────────────────────────────
 function MultiPlacePicker({ m, onToggle, onAll, onStart, onOne, onCancel }:any){
   if(typeof document==="undefined") return null;
@@ -2644,7 +2864,7 @@ function HighlightsList({ hl, onRemove }:any){
   );
 }
 
-function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb, initial, convertInboxId, onConverted, onAddInbox }:any) {
+function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddNb, initial, convertInboxId, onConverted, onAddInbox, places, onMerge, onOpenPlace }:any) {
   const [f,setF] = useState({ name:"",country:"",city:"",district:"",neighborhood:"",types:[],note:"",opening_hours:"",address:"",map_query:"",recommendations:"",source_url:"",rating:0,review:"",photos:[],branches:[],google_place_id:"",review_highlights:null,cover_position:null, ...(initial||{}) });
   const [recEdit,setRecEdit] = useState(false);
   const [photoSheet,setPhotoSheet] = useState<number|null>(null);
@@ -2676,6 +2896,22 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
   const topRef = useRef<HTMLDivElement>(null);
   // 自己用「重新找 Google 地圖」找到店 → 代表 AI 原本猜錯 → 用這間時換名稱、提示重新整理
   const manualPick = useRef(false);
+  // ── 重複收藏 ──
+  const [dupDismissed,setDupDismissed] = useState<string[]>([]);
+  const [dupPreview,setDupPreview] = useState<any>(null);
+  const [merging,setMerging] = useState(false);
+  const dups = findDuplicates(f, places||[]).filter(d=>!dupDismissed.includes(d.place.id));
+  const dup = dups[0] || null;
+  async function mergeInto(p:any){
+    if(merging || !onMerge) return;
+    setMerging(true);
+    const merged = await onMerge(p.id, fRef.current);
+    setMerging(false); setDupPreview(null);
+    if(!merged) return;
+    if(convertInboxId && onConverted && !convertedRef.current){ convertedRef.current=true; onConverted(convertInboxId); }
+    if(nextMulti()) return;
+    if(onOpenPlace) onOpenPlace(merged); else onBack();
+  }
   const [candUse,setCandUse] = useState<any>({}); // { [Google 店家編號]: 'main' | 'branch' }
   const [branchBusy,setBranchBusy] = useState('');
   useEffect(()=>{ setCandUse({}); },[cands]);
@@ -2973,6 +3209,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
     if(f.country && f.city && (f.district || f.neighborhood) && onAutoAddNb){
       onAutoAddNb(f.country, f.city, f.district, f.neighborhood);
     }
+    if(dup && dup.kind==='sure' && !window.confirm(`你已經收藏過「${dup.place.name}」了。\n確定要另存一筆嗎？\n（按取消，可以改成合併到原本那筆）`)) return;
     onAdd({...f, id:String(Date.now()), status:"wishlist"});
     if(convertInboxId && onConverted && !convertedRef.current){ convertedRef.current=true; onConverted(convertInboxId); }
     if(nextMulti()) return; // 多間店：換下一間
@@ -3033,6 +3270,20 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
         </div>
 
         {/* Google 找到的店：確認後才填入地址與營業時間 */}
+        {dup && (
+          <div style={{ background: dup.kind==='addr' ? "#F1EFE8" : "#E6F1FB", borderRadius:16, padding:"12px 16px", marginBottom:12 }}>
+            <div style={{ fontSize:14, fontWeight:600, color: dup.kind==='addr' ? "#444441" : "#0C447C", lineHeight:1.5 }}>
+              {dup.kind==='sure' && <>你已經收藏過這間了（{shortDate(dup.place.created_at)}・{dup.place.name}）</>}
+              {dup.kind==='maybe' && <>可能是同一間或分店：{dup.place.name}（{shortDate(dup.place.created_at)}）</>}
+              {dup.kind==='addr' && <>這個地址還有另一筆收藏：{dup.place.name}</>}
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:14, marginTop:10, flexWrap:"wrap" }}>
+              {dup.kind!=='addr' && <button onClick={()=>mergeInto(dup.place)} disabled={merging} style={{ background:"#3C3C3C", color:"#fff", border:"none", borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer" }}>{merging?"合併中…":"合併到原本那筆"}</button>}
+              <button onClick={()=>setDupPreview(dup.place)} style={{ background:"none", border:"none", color:"#185FA5", fontSize:13, cursor:"pointer", padding:0 }}>看原本那筆</button>
+              <button onClick={()=>setDupDismissed(d=>[...d, dup.place.id])} style={{ background:"none", border:"none", color:"#8E8E93", fontSize:13, cursor:"pointer", padding:0 }}>{dup.kind==='addr' ? "知道了" : "不是同一間，另存一筆"}</button>
+            </div>
+          </div>
+        )}
         {redo && (
           <div style={{ background:"#FAEEDA", borderRadius:16, padding:"12px 16px", marginBottom:12 }}>
             <div style={{ fontSize:14, color:"#633806", fontWeight:600, lineHeight:1.5 }}>收藏原因、推薦品項、網友怎麼說是依 AI 原本猜的店整理的</div>
@@ -3180,6 +3431,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
           )}
         </div>
       </div>
+      {dupPreview && <DupPreviewSheet place={dupPreview} canMerge={!!dup && dup.place.id===dupPreview.id && dup.kind!=='addr'} merging={merging} onMerge={()=>mergeInto(dupPreview)} onClose={()=>setDupPreview(null)} />}
       {multi?.step==='pick' && (
         <MultiPlacePicker m={multi}
           onToggle={(i:number)=>setMulti((m:any)=>({ ...m, sel:m.sel.map((v:boolean,j:number)=>j===i?!v:v) }))}
@@ -3270,6 +3522,7 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onMustGoToggl
   const [addTripOpen, setAddTripOpen] = useState(false);
   const [photoSheet, setPhotoSheet] = useState<number|null>(null);
   const [coverEdit, setCoverEdit] = useState(false);
+  const [srcSheet, setSrcSheet] = useState(false);
   const [addedMsg, setAddedMsg] = useState("");
   const [heroIndex, setHeroIndex] = useState(0);
   const [heroDragOffset, setHeroDragOffset] = useState(0);
@@ -3549,12 +3802,15 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onMustGoToggl
             <span style={{ fontSize:17, fontWeight:700, color:"#000", lineHeight:1 }}>＋</span>
             <span style={{ fontSize:10, fontWeight:600, color:"#8E8E93", lineHeight:1 }}>行程</span>
           </button>
-          {place.source_url && (()=>{ const src=inboxSource(place.source_url); return (
-            <a href={place.source_url} target="_blank" rel="noreferrer" title={`打開${src.label}`} style={{ width:56, flexShrink:0, background:"#fff", border:"1px solid #EDE8E2", borderRadius:16, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:3, textDecoration:"none" }}>
-              <span style={{ width:22, height:22, borderRadius:6, background:src.bg, color:"#fff", fontSize:13, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>{src.icon}</span>
+          {getSources(place).length>0 && (()=>{ const srcs=getSources(place); const src=inboxSource(srcs[0].url); const st:any={ width:56, flexShrink:0, background:"#fff", border:"1px solid #EDE8E2", borderRadius:16, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:3, textDecoration:"none", cursor:"pointer", padding:0, position:"relative" };
+            const inner = (<>
+              <span style={{ width:22, height:22, borderRadius:6, background:srcs.length>1?"#3C3C3C":src.bg, color:"#fff", fontSize:13, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>{srcs.length>1?srcs.length:src.icon}</span>
               <span style={{ fontSize:10, fontWeight:600, color:"#8E8E93", lineHeight:1 }}>來源</span>
-            </a>
-          ); })()}
+            </>);
+            return srcs.length>1
+              ? <button onClick={()=>setSrcSheet(true)} title={`被推薦 ${srcs.length} 次`} style={st}>{inner}</button>
+              : <a href={srcs[0].url} target="_blank" rel="noreferrer" title={`打開${src.label}`} style={st}>{inner}</a>;
+          })()}
         </div>
         {addedMsg && <div style={{ textAlign:"center", fontSize:12, color:"#0F6E56", marginTop:-6, marginBottom:12 }}>{addedMsg}</div>}
 
@@ -3568,7 +3824,7 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onMustGoToggl
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 16px" }}>
                 <div>
                   <div style={{ fontSize:11, color:"#8E8E93", marginBottom:3, textTransform:"uppercase", letterSpacing:0.5 }}>
-                    {hasMultiple ? (loc.name || (i===0 ? "總店 / 地址" : `分店 ${i+1}`)) : "地址"}
+                    {hasMultiple ? (i===0 ? "主店" : (loc.name ? `分店・${loc.name}` : `分店 ${i}`)) : "地址"}
                   </div>
                   {hasMultiple && <div style={{ fontSize:12, color:"#8E8E93", marginBottom:2 }}>{[loc.city, loc.district, loc.neighborhood].filter(Boolean).join(" · ")}</div>}
                   <div style={{ fontSize:14, color:"#000" }}>{loc.address || "未填寫"}</div>
@@ -3602,12 +3858,7 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onMustGoToggl
                   )}
                 </div>
               </div>
-              {i>0 && (loc.opening_hours||"").trim() && (
-                <details style={{ borderTop:"1px solid #F0EBE5", padding:"10px 16px" }}>
-                  <summary style={{ fontSize:13, color:"#007AFF", cursor:"pointer", listStyle:"none" }}>這間分店的營業時間 ▾</summary>
-                  <div style={{ fontSize:14, color:"#000", lineHeight:1.6, whiteSpace:"pre-line", marginTop:6 }}>{loc.opening_hours}</div>
-                </details>
-              )}
+              {hasMultiple && ((i===0 ? place.opening_hours : loc.opening_hours)||"").trim() && <HoursRow text={i===0 ? place.opening_hours : loc.opening_hours} />}
             </div>
           );
         })}
@@ -3615,7 +3866,7 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onMustGoToggl
           <ViewReviewCard place={place} onEdit={onEdit} />
         )}
 
-        {place.opening_hours && <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
+        {place.opening_hours && branchLocations(place).length<=1 && <div style={{ background:"#fff", borderRadius:16, padding:"14px 16px", marginBottom:12, boxShadow:"0 1px 2px rgba(28,27,25,0.05)", border:"1px solid rgba(28,27,25,0.05)" }}>
           <div style={{ fontSize:11, color:"#8E8E93", marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>營業時間</div>
           <div style={{ fontSize:15, color:"#000", lineHeight:1.6, whiteSpace:"pre-line" }}>{place.opening_hours}</div>
         </div>}
@@ -3638,6 +3889,17 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onMustGoToggl
             <HighlightsList hl={place.review_highlights} />
           </div>
         )}
+
+        {getSources(place).length>1 && (
+          <div style={{ marginBottom:12 }}>
+            <div style={{ display:"flex", alignItems:"center", margin:"0 4px 6px" }}>
+              <span style={{ flex:1, fontSize:13, color:"#8E8E93" }}>來源</span>
+              <span style={{ fontSize:11, color:"#185FA5", background:"#E6F1FB", padding:"2px 8px", borderRadius:6 }}>被推薦 {getSources(place).length} 次</span>
+            </div>
+            <SourcesList sources={getSources(place)} />
+          </div>
+        )}
+        {srcSheet && <SourcesSheet sources={getSources(place)} onClose={()=>setSrcSheet(false)} />}
 
         {/* Photos — view only, tap to enlarge */}
         {(place.photos||[]).length > 0 && (
@@ -5195,6 +5457,7 @@ export default function App() {
       review_highlights: normHL(p.review_highlights),
       cover_position: normPos(p.cover_position, p.photos),
       must_go: !!p.must_go,
+      sources: p.source_url ? [{ url:p.source_url, at:new Date().toISOString() }] : [],
     };
     const {data,error}=await sb.from('places').insert([payload]).select().single();
     if(!error&&data) setPlaces(ps=>[{...data, map_query:data.summary||'', branches:data.branches||[]},...ps]);
@@ -5214,6 +5477,32 @@ export default function App() {
     setPlaces(ps=>ps.map(p=>p.id===id?{...p,favorite:fav}:p));
     setSelected((prev:any)=>({...prev,favorite:fav}));
   }
+
+  // ── 合併重複收藏：新的來源、照片、推薦品項加進原本那筆，其他保留原本的 ──
+  async function handleMerge(existingId:string, nf:any){
+    const ex:any = places.find((p:any)=>p.id===existingId);
+    if(!ex) return null;
+    const srcs = getSources(ex).map(x=>({...x}));
+    if(nf.source_url && !srcs.some(x=>x.url===nf.source_url)) srcs.push({ url:nf.source_url, at:new Date().toISOString() });
+    const photos:string[] = [...(ex.photos||[])];
+    (nf.photos||[]).forEach((u:string)=>{ if(u && !photos.includes(u)) photos.push(u); });
+    const exRecs = recLines(ex.recommendations);
+    const seen = new Set(exRecs.map((l:string)=>normName(parseRec(l).name)));
+    const addRecs = recLines(nf.recommendations).filter((l:string)=>{ const k=normName(parseRec(l).name); if(!k || seen.has(k)) return false; seen.add(k); return true; });
+    const patch:any = { sources:srcs, photos, recommendations:[...exRecs, ...addRecs] };
+    if(!ex.source_url && nf.source_url) patch.source_url = nf.source_url;
+    if(!ex.google_place_id && nf.google_place_id) patch.google_place_id = nf.google_place_id;
+    if(!(ex.address||'').trim() && nf.address) patch.address = nf.address;
+    if(!(ex.opening_hours||'').trim() && nf.opening_hours) patch.opening_hours = nf.opening_hours;
+    if(!(ex.note||'').trim() && nf.note) patch.note = nf.note;
+    if(!normHL(ex.review_highlights) && normHL(nf.review_highlights)) patch.review_highlights = normHL(nf.review_highlights);
+    const { error } = await sb.from('places').update(patch).eq('id',existingId);
+    if(error){ alert('合併失敗：'+(error.message||'')); return null; }
+    const merged = { ...ex, ...patch };
+    setPlaces(ps=>ps.map((p:any)=>p.id===existingId?merged:p));
+    return merged;
+  }
+  function openPlaceFromAdd(p:any){ setSelected(p); setHistory(h=>[...h.slice(0,-1),"detail"]); }
 
   // ── 切換超想去（星星）──
   async function handleMustGoToggle(id:string, on:boolean){
@@ -5240,6 +5529,7 @@ export default function App() {
       review_highlights: normHL(u.review_highlights),
       cover_position: normPos(u.cover_position, u.photos),
       must_go: !!u.must_go,
+      sources: syncSources(u),
     }).eq('id',u.id);
     if(!error){ setPlaces(ps=>ps.map(p=>p.id===u.id?u:p)); setSelected(u); }
     else { console.error('handleEdit error:', error); alert('儲存失敗：' + (error?.message || JSON.stringify(error))); }
@@ -5305,7 +5595,7 @@ export default function App() {
           WebkitOverflowScrolling:"touch",
           background:"#F5F0EB",
         }}>
-          {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} onAutoAddNb={autoAddNeighborhood} initial={addInitial} convertInboxId={addConvertInboxId} onConverted={(id:string)=>handleDeleteInbox(id)} onAddInbox={handleAddInbox} />}
+          {page==="add"&&<Add onBack={goBack} onAdd={handleAdd} countries={countries} types={types} geoData={geoData} onAutoAddNb={autoAddNeighborhood} initial={addInitial} convertInboxId={addConvertInboxId} onConverted={(id:string)=>handleDeleteInbox(id)} onAddInbox={handleAddInbox} places={places} onMerge={handleMerge} onOpenPlace={openPlaceFromAdd} />}
           {page==="country"&&<CountryPage country={selectedCountry!} places={places} onBack={goBack} onSelect={p=>{setSelected(p);setHistory(h=>[...h,"detail"]);}}
             cityOrder={cityOrderByCountry[selectedCountry!]||[]}
             onUpdateCityOrder={async (country:string, list:string[])=>{ const next={...cityOrderByCountry,[country]:list}; setCityOrderByCountry(next); await saveSettings({city_order_by_country:next}); }} />}
@@ -5315,7 +5605,7 @@ export default function App() {
           {page==="trips"&&<Trips trips={trips} onBack={goBack} onOpen={openTrip} onNew={()=>{ setEditingTrip(null); setHistory(h=>[...h,"tripForm"]); }} showNextTrip={showNextTrip} onToggleNextTrip={handleToggleNextTrip} />}
           {page==="tripForm"&&<TripForm initial={editingTrip} countries={countries} geoData={geoData} onBack={goBack} onSave={editingTrip?handleUpdateTrip:handleAddTrip} onDelete={editingTrip?handleDeleteTrip:undefined} />}
           {page==="tripDetail"&&(()=>{ const t=trips.find(x=>x.id===selectedTripId); return t?<TripDetail trip={t} places={places} onBack={goBack} onSaveDays={handleSaveTripDays} onEditTrip={(tr:any)=>{ setEditingTrip(tr); setHistory(h=>[...h,"tripForm"]); }} onOpenPlace={(p:any)=>{ setSelected(p); setHistory(h=>[...h,"detail"]); }} />:null; })()}
-          {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} onBack={goBack} onUpdateCountries={handleUpdateCountries} onUpdateTypes={handleUpdateTypes} onRenameType={handleRenameType} onUpdateOrder={handleUpdateOrder} onUpdateGeo={handleUpdateGeo} />}
+          {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} onBack={goBack} onUpdateCountries={handleUpdateCountries} onUpdateTypes={handleUpdateTypes} onRenameType={handleRenameType} onUpdateOrder={handleUpdateOrder} onUpdateGeo={handleUpdateGeo} onReload={loadAll} />}
           {page==="detail"&&selected&&(
             <Detail place={selected} onBack={goBack} countries={countries} types={types} geoData={geoData} trips={trips} onAddToTrip={handleAddToTrip} onGoTrips={()=>setHistory(h=>[...h,"trips"])}
               onStatusChange={handleStatusChange} onFavoriteToggle={handleFavoriteToggle} onMustGoToggle={handleMustGoToggle} onEdit={handleEdit} onDelete={handleDelete} />
