@@ -2653,6 +2653,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
   const topRef = useRef<HTMLDivElement>(null);
   // 自己用「重新找 Google 地圖」找到店 → 代表 AI 原本猜錯 → 用這間時換名稱、提示重新整理
   const manualPick = useRef(false);
+  const [scanInfo,setScanInfo] = useState<{kind:'ok'|'none'|'warn', text:string}|null>(null);
   const [redo,setRedo] = useState<any>(null);
 
   function buildCtx(country:string){
@@ -2701,7 +2702,8 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       setF(n); fRef.current=n;
       setAutoKeys(ks=>Array.from(new Set([...ks, ...filled])));
       setCands(d.candidates||[]); setGuess(fl.confidence==='low');
-      if(fl.is_place===false) setAf({status:'done', msg:'這則貼文看起來不像在介紹店家，已先填入能抓到的內容'});
+      if(fl.is_place!==false && !String(n.name||'').trim()) setAf({status:'done', msg:'找不到確定的店名，請自己填「地點名稱」，再按「用這個名稱重新找 Google 地圖」'});
+      else if(fl.is_place===false) setAf({status:'done', msg:'這則貼文看起來不像在介紹店家，已先填入能抓到的內容'});
       else if(d.searchNote) setAf({status:'done', msg:d.searchNote});
       else if(!(d.candidates||[]).length) setAf({status:'done', msg:'Google 地圖找不到這間店，地址請手動填寫'});
       else setAf({status:'done', msg:''});
@@ -2718,6 +2720,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
     setCands([]); setCandIdx(0);
     const target:any = fRef.current.target_hint || null;
     let scanTarget:any = null;
+    setScanInfo(null);
     // 照片 2 張以上：先看這篇是不是介紹了好幾間（店名常印在照片上）
     if(!target && (fRef.current.photos||[]).length>=2){
       setAf({status:'loading', msg:'看看這篇介紹了幾間店…'});
@@ -2734,8 +2737,10 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
           return;
         }
         // 只有一間：照片上讀到的店名（例如 Google 地圖卡片截圖）也交給後面查資料
-        if(places.length===1) scanTarget = { name: places[0].name, hint: places[0].hint };
-      }catch(_){}
+        if(places.length===1){ scanTarget = { name: places[0].name, hint: places[0].hint }; setScanInfo({ kind:'ok', text:`照片上讀到的店名：${places[0].name}` }); }
+        else if(d.note) setScanInfo({ kind:'warn', text:d.note });
+        else setScanInfo({ kind:'none', text:'照片和內文上沒讀到店名，改由 AI 上網找' });
+      }catch(_){ setScanInfo({ kind:'warn', text:'照片判斷失敗（連線錯誤），改由 AI 上網找' }); }
     }
     setAf({status:'loading', msg:'讀取貼文、上網查資料中…約需 30 秒'});
     const r = await fetchAutofill(url, fRef.current.country||'', target || scanTarget, hadPhotos);
@@ -2834,6 +2839,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       const filled:string[] = [];
       // 自己找到的店：名稱、地圖搜尋名稱換成 Google 上的正式店名
       if(manual && c.name){ n.name=c.name; n.map_query=c.name; filled.push('name','map_query'); }
+      else if(!String(x.name||'').trim() && c.name){ n.name=c.name; filled.push('name'); } // 名稱空白時也帶入
       if(addr){ n.address=addr; filled.push('address');
         if(parsed){
           const cityChanged = !!(parsed.city && x.city && parsed.city!==x.city);
@@ -2953,6 +2959,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
               style={{ width:"100%", border:"none", outline:"none", fontSize:15, color:"#000", background:"none", fontFamily:"inherit" }} />
             {af.status==='loading' && <div style={{ fontSize:13, color:"#8E8E93", marginTop:8 }}>{af.msg}</div>}
             {af.status!=='loading' && af.msg && <div style={{ fontSize:13, color: af.status==='error' ? "#C0392B" : "#8E8E93", marginTop:8 }}>{af.msg}</div>}
+            {scanInfo && multi?.step!=='run' && <div style={{ fontSize:12, color: scanInfo.kind==='ok' ? "#0F6E56" : scanInfo.kind==='warn' ? "#A32D2D" : "#8E8E93", marginTop:6 }}>{scanInfo.text}</div>}
             {af.status==='error' && SOCIAL_RE.test(f.source_url||'') && (
               <button onClick={()=>{ lastUrl.current=""; runAutofill(f.source_url.trim()); }} style={{ marginTop:6, background:"none", border:"none", color:"#007AFF", fontSize:13, padding:0, cursor:"pointer" }}>重試</button>
             )}

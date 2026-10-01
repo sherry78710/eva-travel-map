@@ -230,6 +230,7 @@ async function askClaude(post: { title: string; desc: string }, ctx: any) {
  "confidence": "high 或 low。只有貼文文字明確寫出店名或地址時才填 high；店名是你根據菜色、地區等線索上網推測出來的，一律填 low"
 }
 規則：
+- name 一定是店家本身的名稱：人名（藝人、網紅、貼文作者，例如「員瑛」）不是店名；「員瑛同款燒肉」「銀座燒肉店」這種描述也不是店名。上網也查不到確定的店名時，name 填空字串、confidence 填 low，不要拿人名或描述充數。
 - recommendations 最多 6 項，貼文提到的放前面。品名一定要具體：不可以只寫「豬排」「咖啡」「拉麵」這種類別詞；貼文只寫類別詞時，上網找出這間店對應的具體品名（例：特上ロースとんかつ定食）。
 - types：只有完全符合才選子類型；沒有完全符合的子類型，就只選「餐廳」這類大類。定義如下：
 ${typeRules || '（無）'}
@@ -278,11 +279,29 @@ const OWN_PHOTO_RE = /^https:\/\/[^/]+\/storage\/v1\/object\/public\/photos\//;
 async function scanPlaces(caption: string, photos: string[]) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error('缺少 ANTHROPIC_API_KEY');
+  // 伺服器先把照片下載下來再直接交給 AI（不讓 AI 自己去網址抓，比較不會失敗）
+  const OK_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  const imgs = await Promise.all(photos.map(async (u) => {
+    try {
+      const r = await fetch(u, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
+      if (!r.ok) return null;
+      let type = (r.headers.get('content-type') || '').split(';')[0].toLowerCase();
+      if (type === 'image/jpg') type = 'image/jpeg';
+      if (!OK_TYPES.includes(type)) return null;
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (!buf.length || buf.length > 4.5 * 1024 * 1024) return null;
+      return { type, data: buf.toString('base64') };
+    } catch { return null; }
+  }));
   const content: any[] = [];
-  photos.forEach((u, i) => {
+  let sent = 0;
+  imgs.forEach((im, i) => {
+    if (!im) return;
+    sent++;
     content.push({ type: 'text', text: `照片 ${i + 1}：` });
-    content.push({ type: 'image', source: { type: 'url', url: u } });
+    content.push({ type: 'image', source: { type: 'base64', media_type: im.type, data: im.data } });
   });
+  console.log('scan photos', JSON.stringify({ total: photos.length, sent }));
   content.push({ type: 'text', text: `貼文內容：\n${caption || '（沒有文字）'}\n\n照片共 ${photos.length} 張。` });
   const system = `你是旅遊美食收藏助理。判斷這則 IG / Threads 貼文介紹了哪些實體店家或景點。店名常常印在照片上的小字（例如「📍店名」），也可能寫在內文。
 只輸出一個 JSON 物件，不要任何其他文字、不要 Markdown：
@@ -293,6 +312,7 @@ async function scanPlaces(caption: string, photos: string[]) {
 - 封面、總覽、拼貼圖這類不屬於單一間店的照片，不要放進任何一間。
 - 同一間店出現多次（例如照片 3、4、5 都是同一間），合併成一筆，photos 列出全部。
 - 整篇只介紹一間店，就只回傳一筆。
+- name 一定是店家本身的名稱。人名（藝人、網紅、貼文作者）不是店名；「員瑛同款燒肉」「銀座的燒肉店」這種描述也不是店名。照片和內文都看不到真正的店名時，name 填空字串。
 - 照片裡有 Google 地圖、Naver 地圖、Tabelog 這類「店家卡片截圖」時，以卡片上的店名為準（最可靠）。卡片同時有外文和當地語言店名時，name 用當地語言的寫法（日本用日文、韓國用韓文），例如「近江うし焼肉 にくTATSU 銀座店」。`;
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -364,7 +384,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ places, caption: post?.desc || '' });
     } catch (e: any) {
       console.error('scan', e);
-      return NextResponse.json({ places: [], caption: post?.desc || '', note: '判斷不出有幾間，先當成一間整理' });
+      return NextResponse.json({ places: [], caption: post?.desc || '', note: '照片判斷失敗：' + String(e?.message || e).slice(0, 80) });
     }
   }
 
