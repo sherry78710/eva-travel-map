@@ -239,8 +239,8 @@ ${typeRules || '（無）'}
   const target = ctx.target && ctx.target.name ? ctx.target : null;
   const targetNote = target ? `
 
-★ 這則貼文介紹了好幾間店，這次只整理其中這一間：「${target.name}」${target.hint ? `（貼文對這間的說明：${target.hint}）` : ''}。
-name、recommendations、note、highlights 都只寫這一間，其他店完全不要管；recommendations 的「貼文提到的」以上面這段說明為準。` : '';
+★ 這次要整理的店已經確定是：「${target.name}」${target.hint ? `（貼文對這間的說明：${target.hint}）` : ''}。這是從貼文照片（例如地圖店家卡片）讀到、或使用者指定的正確店名，請用這個名稱上網搜尋，不要改猜別間。
+貼文如果介紹了好幾間，name、recommendations、note、highlights 都只寫這一間，其他店完全不要管。search_query 要包含這個店名。` : '';
   const user = `countries: ${JSON.stringify(ctx.countries)}
 cities: ${JSON.stringify(ctx.cities)}
 areas（各城市已有的商圈）: ${JSON.stringify(ctx.areas || {})}
@@ -292,7 +292,8 @@ async function scanPlaces(caption: string, photos: string[]) {
 - 每張照片最多屬於一間店。照片上沒寫店名時，依前後照片和畫面判斷屬於哪一間；判斷不出來就不要放進任何一間。
 - 封面、總覽、拼貼圖這類不屬於單一間店的照片，不要放進任何一間。
 - 同一間店出現多次（例如照片 3、4、5 都是同一間），合併成一筆，photos 列出全部。
-- 整篇只介紹一間店，就只回傳一筆。`;
+- 整篇只介紹一間店，就只回傳一筆。
+- 照片裡有 Google 地圖、Naver 地圖、Tabelog 這類「店家卡片截圖」時，以卡片上的店名為準（最可靠）。卡片同時有外文和當地語言店名時，name 用當地語言的寫法（日本用日文、韓國用韓文），例如「近江うし焼肉 にくTATSU 銀座店」。`;
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },

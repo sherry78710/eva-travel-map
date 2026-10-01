@@ -2651,6 +2651,9 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
   const runToken = useRef(0);
   const convertedRef = useRef(false);
   const topRef = useRef<HTMLDivElement>(null);
+  // 自己用「重新找 Google 地圖」找到店 → 代表 AI 原本猜錯 → 用這間時換名稱、提示重新整理
+  const manualPick = useRef(false);
+  const [redo,setRedo] = useState<any>(null);
 
   function buildCtx(country:string){
     const geo = geoDataProp||GEO;
@@ -2667,6 +2670,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       .catch(()=>({ ok:false, status:0, d:null }));
   }
   function applyAutofill(r:any, hadPhotos:boolean){
+    manualPick.current=false; setRedo(null);
     try{
       if(!r.d){ setAf({status:'error', msg: r.status ? `伺服器錯誤（代碼 ${r.status}），請稍後再試` : '自動填寫失敗，請確認網路後再試'}); return; }
       const d:any = r.d;
@@ -2713,6 +2717,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
     const hadPhotos = (fRef.current.photos||[]).length > 0;
     setCands([]); setCandIdx(0);
     const target:any = fRef.current.target_hint || null;
+    let scanTarget:any = null;
     // 照片 2 張以上：先看這篇是不是介紹了好幾間（店名常印在照片上）
     if(!target && (fRef.current.photos||[]).length>=2){
       setAf({status:'loading', msg:'看看這篇介紹了幾間店…'});
@@ -2728,10 +2733,12 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
           setAf({status:'done', msg:''});
           return;
         }
+        // 只有一間：照片上讀到的店名（例如 Google 地圖卡片截圖）也交給後面查資料
+        if(places.length===1) scanTarget = { name: places[0].name, hint: places[0].hint };
       }catch(_){}
     }
     setAf({status:'loading', msg:'讀取貼文、上網查資料中…約需 30 秒'});
-    const r = await fetchAutofill(url, fRef.current.country||'', target, hadPhotos);
+    const r = await fetchAutofill(url, fRef.current.country||'', target || scanTarget, hadPhotos);
     if(tok!==runToken.current) return;
     applyAutofill(r, hadPhotos);
   }
@@ -2804,6 +2811,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       let d:any = {}; try{ d = await res.json(); }catch(_){}
       if(!res.ok || d.error){ setAf({status:'error', msg:(d.error||'搜尋失敗')+`（代碼 ${res.status}）`}); return; }
       setCands(d.candidates||[]); setCandIdx(0); setGuess(false);
+      if((d.candidates||[]).length) manualPick.current=true;
       setAf({status:'done', msg:(d.candidates||[]).length ? '' : 'Google 地圖找不到這個名稱，可以換個寫法再試'});
     }catch(_){ setAf({status:'error', msg:'搜尋失敗，請確認網路'}); }
     finally{ setReBusy(false); }
@@ -2814,8 +2822,9 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
     setCandBusy(true);
     try{
       const cur:any = fRef.current;
+      const manual = manualPick.current;
       const res = await fetch('/api/place-details', { method:'POST', headers:{'content-type':'application/json'},
-        body: JSON.stringify({ id:c.id, country: cur.country||'', name: cur.name||c.name||'', hints: normHL(cur.review_highlights) }) });
+        body: JSON.stringify({ id:c.id, country: cur.country||'', name: manual ? (c.name||cur.name||'') : (cur.name||c.name||''), hints: manual ? null : normHL(cur.review_highlights) }) });
       const d = await res.json();
       if(!res.ok || d.error){ alert(d.error||'查詢失敗'); return; }
       const addr = d.address || c.address || '';
@@ -2823,6 +2832,8 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       const x:any = fRef.current;
       const n:any = {...x, google_place_id:c.id};
       const filled:string[] = [];
+      // 自己找到的店：名稱、地圖搜尋名稱換成 Google 上的正式店名
+      if(manual && c.name){ n.name=c.name; n.map_query=c.name; filled.push('name','map_query'); }
       if(addr){ n.address=addr; filled.push('address');
         if(parsed){
           const cityChanged = !!(parsed.city && x.city && parsed.city!==x.city);
@@ -2840,7 +2851,24 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       setF(n); fRef.current=n;
       setAutoKeys(ks=>Array.from(new Set([...ks, ...filled])));
       setCands([]);
+      if(manual){ manualPick.current=false; if(SOCIAL_RE.test(n.source_url||'')) setRedo({ cand:c }); }
     } finally { setCandBusy(false); }
+  }
+
+  // 用正確店名重新整理收藏原因、推薦品項、網友怎麼說、類型（地址、營業時間、照片不動）
+  async function redoAutofill(){
+    const c = redo?.cand; if(!c) return;
+    setRedo(null);
+    const tok = ++runToken.current;
+    const cleared:any = { ...fRef.current, note:"", recommendations:"", review_highlights:null, types:[] };
+    setF(cleared); fRef.current=cleared;
+    setAutoKeys(ks=>ks.filter(k=>!['note','recommendations','review_highlights','types'].includes(k)));
+    setAf({status:'loading', msg:`用「${c.name}」重新整理中…約需 30 秒`});
+    const r = await fetchAutofill(fRef.current.source_url, fRef.current.country||'', { name:c.name, hint:'' }, true);
+    if(tok!==runToken.current) return;
+    applyAutofill(r, true);
+    setCands([]); setGuess(false);
+    if(r.ok && r.d && !r.d.error) await useCandidate(c); // 再合併一次這間的 Google 評論
   }
 
   function removeCover(){
@@ -2947,6 +2975,15 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
         </div>
 
         {/* Google 找到的店：確認後才填入地址與營業時間 */}
+        {redo && (
+          <div style={{ background:"#FAEEDA", borderRadius:16, padding:"12px 16px", marginBottom:12 }}>
+            <div style={{ fontSize:14, color:"#633806", fontWeight:600, lineHeight:1.5 }}>收藏原因、推薦品項、網友怎麼說是依 AI 原本猜的店整理的</div>
+            <div style={{ display:"flex", alignItems:"center", gap:14, marginTop:10, flexWrap:"wrap" }}>
+              <button onClick={redoAutofill} style={{ background:"#3C3C3C", color:"#fff", border:"none", borderRadius:10, padding:"8px 12px", fontSize:13, fontWeight:600, cursor:"pointer", textAlign:"left" }}>用「{redo.cand.name}」重新整理</button>
+              <button onClick={()=>setRedo(null)} style={{ background:"none", border:"none", color:"#854F0B", fontSize:13, cursor:"pointer", padding:0 }}>不用</button>
+            </div>
+          </div>
+        )}
         {cand && (
           <div style={{ background:"#fff", borderRadius:16, padding:"12px 16px", marginBottom:12, border:"1px solid rgba(28,27,25,0.08)" }}>
             {guess && (
