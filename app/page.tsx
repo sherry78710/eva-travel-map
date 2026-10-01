@@ -620,10 +620,20 @@ const PLACES_INIT = [
 ];
 
 const STATUS_CFG = {
-  wishlist: { label:"想去", mark:"○", iconBg:"#EDE8E2", iconColor:"#3C3C43" },
+  wishlist: { label:"還沒去", mark:"○", iconBg:"#EDE8E2", iconColor:"#3C3C43" },
   visited:  { label:"去過", mark:"●", iconBg:"#3C3C43", iconColor:"#FFF" },
 };
 const FAVORITE_CFG = { label:"最愛", markOn:"♥", markOff:"♡" };
+// 超想去：所有收藏都是想去的，特別想去的再標星星（去過的店不算在「超想去」裡）
+const MUST_GO_CFG = { label:"超想去", markOn:"★", markOff:"☆" };
+const isMustGo = (p:any) => !!p?.must_go && p?.status!=="visited";
+// 狀態篩選：超想去／去過／最愛
+const FILTERS = [
+  { key:"must_go",  label:`${MUST_GO_CFG.markOn} ${MUST_GO_CFG.label}`, test:(p:any)=>isMustGo(p) },
+  { key:"visited",  label:"● 去過", test:(p:any)=>p.status==="visited" },
+  { key:"favorite", label:`${FAVORITE_CFG.markOn} ${FAVORITE_CFG.label}`, test:(p:any)=>!!p.favorite },
+];
+const passFilter = (p:any, key:string) => !key || !!FILTERS.find(f=>f.key===key)?.test(p);
 
 function getCities(country) { return Object.keys(GEO[country] || {}); }
 function getDistricts(country, city) { return Object.keys((GEO[country] || {})[city] || {}); }
@@ -678,7 +688,7 @@ function PlaceRow({ place, onClick }) {
         <PlaceIcon status={place.status} />
       )}
       <div style={{ flex:1 }}>
-        <div style={{ fontSize:15, fontWeight:600, color:"#000", marginBottom:2 }}>{place.name}{place._branchName ? ` · ${place._branchName}` : ""}</div>
+        <div style={{ fontSize:15, fontWeight:600, color:"#000", marginBottom:2 }}>{isMustGo(place) && <span style={{ marginRight:4 }}>{MUST_GO_CFG.markOn}</span>}{place.name}{place._branchName ? ` · ${place._branchName}` : ""}</div>
         <div style={{ fontSize:12, color:"#8E8E93" }}>{[place.district, place.neighborhood].filter(Boolean).join(" ")}{place.types?.[0] ? ` · ${place.types[0]}` : ""}</div>
         {place.note && <div style={{ fontSize:11, color:"#636366", marginTop:2, fontStyle:"italic" }}>{place.note}</div>}
         {closedStatus==='closed' && <span style={{ display:"inline-block", marginTop:4, padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:500, background:"#F5E6E4", color:"#A85550" }}>● 今日公休</span>}
@@ -1342,7 +1352,7 @@ function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onT
                   }
                 </div>
                 <div style={{ padding:"8px 10px 10px" }}>
-                  <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
+                  <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{isMustGo(p) && <span style={{ marginRight:3 }}>{MUST_GO_CFG.markOn}</span>}{p.name}</div>
                   <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
                   {p.note && <div style={{ fontSize:10, color:"#636366", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
                   {(()=>{const cs=checkTodayClosed(p.opening_hours);const lbl=getClosedDaysLabel(p.opening_hours);return cs==='closed'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F5E6E4",color:"#A85550"}}>● 今日公休</span>:cs==='uncertain'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F0EBE4",color:"#9C8878"}}>? 不確定</span>:lbl?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#EDE8E2",color:"#8E8E93"}}>{lbl}</span>:null;})()}
@@ -1390,7 +1400,7 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
   const filtered = rows.filter((p:any) => {
     const lq = q.toLowerCase();
     const mQ = !q.trim() || [p.name, p.city, p.district, p.neighborhood, p.note||"", p.review||"", ...(p.recommendations||[]), ...(p.types||[])].some((s:string) => (s||"").toLowerCase().includes(lq));
-    const mS = !filterStatus || (filterStatus === "favorite" ? !!p.favorite : p.status === filterStatus);
+    const mS = passFilter(p, filterStatus);
     const mC = !filterCity || filterCity === "全部" || p.city === filterCity;
     return mQ && mS && mC;
   });
@@ -1431,28 +1441,17 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
             <div style={{ fontSize:20, fontWeight:700, color:!filterStatus?"white":"#000", lineHeight:1 }}>{list.length}</div>
             <div style={{ fontSize:10, color:!filterStatus?"rgba(255,255,255,0.7)":"#8E8E93", marginTop:3 }}>全部</div>
           </button>
-          {Object.entries(STATUS_CFG).map(([k,s])=>{
-            const count = list.filter((p:any)=>p.status===k).length;
-            const active = filterStatus === k;
+          {FILTERS.map(fl=>{
+            const count = list.filter((p:any)=>fl.test(p)).length;
+            const active = filterStatus === fl.key;
             return (
-              <button key={k} onClick={()=>setFilterStatus(active?"":k)}
+              <button key={fl.key} onClick={()=>setFilterStatus(active?"":fl.key)}
                 style={{ flex:1, background:active?"#3C3C3C":"#F5F0EB", borderRadius:12, padding:"10px 0", textAlign:"center", border:"none", cursor:"pointer" }}>
                 <div style={{ fontSize:20, fontWeight:700, color:active?"white":"#000", lineHeight:1 }}>{count}</div>
-                <div style={{ fontSize:10, color:active?"rgba(255,255,255,0.7)":"#8E8E93", marginTop:3 }}>{s.mark} {s.label}</div>
+                <div style={{ fontSize:10, color:active?"rgba(255,255,255,0.7)":"#8E8E93", marginTop:3 }}>{fl.label}</div>
               </button>
             );
           })}
-          {(() => {
-            const count = list.filter((p:any)=>p.favorite).length;
-            const active = filterStatus === "favorite";
-            return (
-              <button onClick={()=>setFilterStatus(active?"":"favorite")}
-                style={{ flex:1, background:active?"#3C3C3C":"#F5F0EB", borderRadius:12, padding:"10px 0", textAlign:"center", border:"none", cursor:"pointer" }}>
-                <div style={{ fontSize:20, fontWeight:700, color:active?"white":"#000", lineHeight:1 }}>{count}</div>
-                <div style={{ fontSize:10, color:active?"rgba(255,255,255,0.7)":"#8E8E93", marginTop:3 }}>{FAVORITE_CFG.markOn} {FAVORITE_CFG.label}</div>
-              </button>
-            );
-          })()}
         </div>
         {/* 搜尋 */}
         <div style={{ display:"flex", alignItems:"center", gap:10, background:"#F5F0EB", borderRadius:12, padding:"10px 14px", marginBottom:10 }}>
@@ -1534,7 +1533,7 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
                         }
                       </div>
                       <div style={{ padding:"8px 10px 10px" }}>
-                        <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}{p._branchName ? ` · ${p._branchName}` : ""}</div>
+                        <div style={{ fontSize:13, fontWeight:600, color:"#000", marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{isMustGo(p) && <span style={{ marginRight:3 }}>{MUST_GO_CFG.markOn}</span>}{p.name}{p._branchName ? ` · ${p._branchName}` : ""}</div>
                         <div style={{ fontSize:11, color:"#8E8E93" }}>{p.neighborhood||p.city}</div>
                         {p.note && <div style={{ fontSize:10, color:"#636366", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.note}</div>}
                         {(()=>{const cs=checkTodayClosed(p.opening_hours);const lbl=getClosedDaysLabel(p.opening_hours);return cs==='closed'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F5E6E4",color:"#A85550"}}>● 今日公休</span>:cs==='uncertain'?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#F0EBE4",color:"#9C8878"}}>? 不確定</span>:lbl?<span style={{display:"inline-block",marginTop:3,padding:"1px 6px",borderRadius:20,fontSize:9,fontWeight:500,background:"#EDE8E2",color:"#8E8E93"}}>{lbl}</span>:null;})()}
@@ -3264,7 +3263,7 @@ function GooglePhotos({ placeId, onOpen }:any){
 // ── Detail ────────────────────────────────────────────────────────────────────
 function touchDist(a:any, b:any){ return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); }
 
-function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onEdit, countries, types, geoData, trips, onAddToTrip, onGoTrips }) {
+function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onMustGoToggle, onDelete, onEdit, countries, types, geoData, trips, onAddToTrip, onGoTrips }) {
   const [editing, setEditing] = useState(false);
   const [f, setF] = useState({...place});
   const [lightboxLocal, setLightboxLocal] = useState<{photos:string[],index:number}|null>(null);
@@ -3499,6 +3498,12 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
                 </div>
               ))}
             </div>
+            {onMustGoToggle && (
+              <button onClick={()=>onMustGoToggle(place.id, !place.must_go)} aria-label={place.must_go?"取消超想去":"標為超想去"}
+                style={{ position:"absolute", top:12, right:12, width:42, height:42, borderRadius:21, border:"none", background:"rgba(0,0,0,0.35)", backdropFilter:"blur(6px)", color:place.must_go?"#FAC775":"#fff", fontSize:23, lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", zIndex:2 }}>
+                {place.must_go?MUST_GO_CFG.markOn:MUST_GO_CFG.markOff}
+              </button>
+            )}
             {place.photos.length>1 && (
               <div style={{ position:"absolute", bottom:18, left:0, right:0, display:"flex", justifyContent:"center", gap:5, pointerEvents:"none" }}>
                 {place.photos.map((_:string, i:number) => (
@@ -3516,7 +3521,11 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onDelete, onE
           </div>
         ) : (
           <div style={{ padding:"16px 20px 0" }}>
-            <div style={{ fontSize:26, fontWeight:700, color:"#000", letterSpacing:-0.5, marginBottom:4 }}>{place.name}</div>
+            <div style={{ display:"flex", alignItems:"flex-start", gap:10, marginBottom:4 }}>
+              <div style={{ flex:1, minWidth:0, fontSize:26, fontWeight:700, color:"#000", letterSpacing:-0.5 }}>{place.name}</div>
+              {onMustGoToggle && <button onClick={()=>onMustGoToggle(place.id, !place.must_go)} aria-label={place.must_go?"取消超想去":"標為超想去"}
+                style={{ flexShrink:0, width:40, height:40, borderRadius:20, border:"1px solid #EDE8E2", background:"#fff", color:place.must_go?"#EF9F27":"#8E8E93", fontSize:22, lineHeight:1, cursor:"pointer" }}>{place.must_go?MUST_GO_CFG.markOn:MUST_GO_CFG.markOff}</button>}
+            </div>
             <div style={{ display:"flex", alignItems:"center", gap:8 }}>
               <span style={{ flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontSize:13, color:"#8E8E93" }}>{[place.country,place.city,place.district,place.neighborhood].filter(Boolean).join(" · ")}</span>
               {place.types?.length>0 && <span style={{ flexShrink:0, whiteSpace:"nowrap", fontSize:11, fontWeight:700, color:"#6b655c", background:"#EDE6DB", padding:"3px 9px", borderRadius:20, letterSpacing:0.3 }}>{place.types.join("・")}</span>}
@@ -3715,7 +3724,7 @@ function Search({ places, onBack, onSelect }) {
   useEffect(()=>{ memSet('search', { q, fS, fT }); },[q, fS, fT]);
   const rootRef = useRef<HTMLDivElement>(null);
   useScrollMemory('search', ()=>rootRef.current?.parentElement);
-  const filtered=places.filter(p=>{ const lq=q.toLowerCase(); const mQ=!q||[p.name,p.neighborhood,p.district,p.city,p.country,p.note||"",...(p.types||[]),...(p.recommendations||[])].filter(Boolean).some((s:any)=>String(s).toLowerCase().includes(lq)); const mS=!fS||(fS==="favorite"?!!p.favorite:p.status===fS); return mQ&&mS&&(!fT||p.types?.includes(fT)); });
+  const filtered=places.filter(p=>{ const lq=q.toLowerCase(); const mQ=!q||[p.name,p.neighborhood,p.district,p.city,p.country,p.note||"",...(p.types||[]),...(p.recommendations||[])].filter(Boolean).some((s:any)=>String(s).toLowerCase().includes(lq)); const mS=passFilter(p, fS); return mQ&&mS&&(!fT||p.types?.includes(fT)); });
   return (
     <div ref={rootRef} style={{ minHeight:"100vh", background:"#F5F0EB", animation:"fadeIn 0.2s ease-out" }}>
       <div style={{ background:"#FDF8F3", paddingTop:"calc(env(safe-area-inset-top) + 12px)", paddingBottom:"12px", paddingLeft:"16px", paddingRight:"16px" }}>
@@ -3725,8 +3734,8 @@ function Search({ places, onBack, onSelect }) {
           <button onClick={onBack} style={{ background:"none", border:"none", color:"#007AFF", fontSize:14, cursor:"pointer", padding:0 }}>取消</button>
         </div>
         <div style={{ display:"flex", gap:6, overflowX:"auto" }}>
-          {Object.entries(STATUS_CFG).map(([k,s])=>(
-            <button key={k} onClick={()=>setFS(fS===k?"":k)} style={{ flexShrink:0, padding:"6px 14px", borderRadius:20, border:"none", background:fS===k?"#000":"#EDE8E2", color:fS===k?"white":"#3C3C43", fontSize:13, cursor:"pointer" }}>{s.mark} {s.label}</button>
+          {FILTERS.filter(fl=>fl.key!=="favorite").map(fl=>(
+            <button key={fl.key} onClick={()=>setFS(fS===fl.key?"":fl.key)} style={{ flexShrink:0, padding:"6px 14px", borderRadius:20, border:"none", background:fS===fl.key?"#000":"#EDE8E2", color:fS===fl.key?"white":"#3C3C43", fontSize:13, cursor:"pointer" }}>{fl.label}</button>
           ))}
           <button onClick={()=>setFS(fS==="favorite"?"":"favorite")} style={{ flexShrink:0, padding:"6px 14px", borderRadius:20, border:"none", background:fS==="favorite"?"#000":"#EDE8E2", color:fS==="favorite"?"white":"#3C3C43", fontSize:13, cursor:"pointer" }}>{FAVORITE_CFG.markOn} {FAVORITE_CFG.label}</button>
           {["餐廳","咖啡廳","景點","市場"].map(t=>(
@@ -5185,6 +5194,7 @@ export default function App() {
       google_place_id:p.google_place_id||null,
       review_highlights: normHL(p.review_highlights),
       cover_position: normPos(p.cover_position, p.photos),
+      must_go: !!p.must_go,
     };
     const {data,error}=await sb.from('places').insert([payload]).select().single();
     if(!error&&data) setPlaces(ps=>[{...data, map_query:data.summary||'', branches:data.branches||[]},...ps]);
@@ -5205,6 +5215,18 @@ export default function App() {
     setSelected((prev:any)=>({...prev,favorite:fav}));
   }
 
+  // ── 切換超想去（星星）──
+  async function handleMustGoToggle(id:string, on:boolean){
+    setPlaces(ps=>ps.map(p=>p.id===id?{...p,must_go:on}:p));
+    setSelected((prev:any)=>prev && prev.id===id ? {...prev,must_go:on} : prev);
+    const { error } = await sb.from('places').update({ must_go:on }).eq('id',id);
+    if(error){
+      setPlaces(ps=>ps.map(p=>p.id===id?{...p,must_go:!on}:p));
+      setSelected((prev:any)=>prev && prev.id===id ? {...prev,must_go:!on} : prev);
+      alert('儲存失敗：'+(error.message||''));
+    }
+  }
+
   // ── 編輯 ──
   async function handleEdit(u:any){
     const {error}=await sb.from('places').update({
@@ -5217,6 +5239,7 @@ export default function App() {
       branches:u.branches||[],
       review_highlights: normHL(u.review_highlights),
       cover_position: normPos(u.cover_position, u.photos),
+      must_go: !!u.must_go,
     }).eq('id',u.id);
     if(!error){ setPlaces(ps=>ps.map(p=>p.id===u.id?u:p)); setSelected(u); }
     else { console.error('handleEdit error:', error); alert('儲存失敗：' + (error?.message || JSON.stringify(error))); }
@@ -5295,7 +5318,7 @@ export default function App() {
           {page==="settings"&&<Settings countries={countries} types={types} countryOrder={countryOrder} geoData={geoData} onBack={goBack} onUpdateCountries={handleUpdateCountries} onUpdateTypes={handleUpdateTypes} onRenameType={handleRenameType} onUpdateOrder={handleUpdateOrder} onUpdateGeo={handleUpdateGeo} />}
           {page==="detail"&&selected&&(
             <Detail place={selected} onBack={goBack} countries={countries} types={types} geoData={geoData} trips={trips} onAddToTrip={handleAddToTrip} onGoTrips={()=>setHistory(h=>[...h,"trips"])}
-              onStatusChange={handleStatusChange} onFavoriteToggle={handleFavoriteToggle} onEdit={handleEdit} onDelete={handleDelete} />
+              onStatusChange={handleStatusChange} onFavoriteToggle={handleFavoriteToggle} onMustGoToggle={handleMustGoToggle} onEdit={handleEdit} onDelete={handleDelete} />
           )}
         </div>
       )}
