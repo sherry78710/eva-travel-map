@@ -20,6 +20,10 @@ async function bump(kind: string, limit: number, n = 1): Promise<string> {
   if (error) { console.error('bump_usage error', kind, error); return '計數功能出錯：' + (error.message || JSON.stringify(error)); }
   return data === true ? 'ok' : 'limit';
 }
+// AI 呼叫失敗（例如額度不足）時把次數退回，只有成功的才算
+async function refund(kind: string, limit: number) {
+  try { await sb.rpc('bump_usage', { p_kind: kind, p_limit: limit, p_n: -1 }); } catch {}
+}
 function bumpFail(r: string, what: string) {
   return r === 'limit'
     ? NextResponse.json({ error: `今日${what}次數已用完，明天再試` }, { status: 429 })
@@ -387,6 +391,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ places, caption: post?.desc || '' });
     } catch (e: any) {
       console.error('scan', e);
+      await refund('scan', LIMIT_SCAN);
       return NextResponse.json({ places: [], caption: post?.desc || '', note: '照片判斷失敗：' + String(e?.message || e).slice(0, 80) });
     }
   }
@@ -420,6 +425,7 @@ export async function POST(req: NextRequest) {
       target: body.target && typeof body.target.name === 'string' ? { name: body.target.name.slice(0, 80), hint: String(body.target.hint || '').slice(0, 120) } : null,
     });
   } catch (e: any) {
+    await refund('ai', LIMIT_AI);
     return NextResponse.json({ cover, caption: post.desc, error: 'AI 整理失敗：' + (e?.message || e) }, { status: 502 });
   }
 
