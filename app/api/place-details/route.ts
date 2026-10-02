@@ -89,7 +89,7 @@ async function lookup(id: string, country: string, name: string, hints: HL | nul
   if (r !== 'ok') return bumpFail(r, ' Google 查詢');
 
   // 地址用當地語言（地址解析與 Naver 地圖用得到），營業時間、評論、商圈用繁中
-  const zhMask = withSummary ? 'id,regularOpeningHours,reviews,addressComponents,businessStatus' : 'id,regularOpeningHours,addressComponents,businessStatus';
+  const zhMask = withSummary ? 'id,regularOpeningHours,reviews,addressComponents,businessStatus,location' : 'id,regularOpeningHours,addressComponents,businessStatus,location';
   const [addrRes, zhRes] = await Promise.all([
     fetch(`https://places.googleapis.com/v1/places/${id}?languageCode=${langFor(country)}`, {
       headers: { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'id,formattedAddress' }, cache: 'no-store',
@@ -124,7 +124,7 @@ async function lookup(id: string, country: string, name: string, hints: HL | nul
     }
   }
 
-  return NextResponse.json({ address: a.formattedAddress || '', opening_hours: hours.join('\n'), area, highlights, summaryNote, business_status: h?.businessStatus || '' });
+  return NextResponse.json({ address: a.formattedAddress || '', opening_hours: hours.join('\n'), area, highlights, summaryNote, business_status: h?.businessStatus || '', lat: h?.location?.latitude ?? null, lng: h?.location?.longitude ?? null });
 }
 
 // 舊版呼叫方式（只查地址與營業時間）

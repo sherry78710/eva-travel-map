@@ -70,13 +70,22 @@ async function searchGoogle(query: string, country: string) {
   if (!key || !query) return [];
   const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.businessStatus' },
+    headers: { 'content-type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.businessStatus,places.location' },
     body: JSON.stringify({ textQuery: query, languageCode: langFor(country), pageSize: 3 }),
     signal: AbortSignal.timeout(12000),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) { console.error('backfill searchText', data); return []; }
-  return (data.places || []).map((p: any) => ({ id: p.id, name: p.displayName?.text || '', address: p.formattedAddress || '', status: p.businessStatus || '' }));
+  return (data.places || []).map((p: any) => ({ id: p.id, name: p.displayName?.text || '', address: p.formattedAddress || '', status: p.businessStatus || '', lat: p.location?.latitude, lng: p.location?.longitude }));
+}
+
+// 兩個座標的距離（公尺）
+function distM(a: any, b: any) {
+  if (a?.lat == null || b?.lat == null) return null;
+  const R = 6371000, toR = (x: number) => x * Math.PI / 180;
+  const dLat = toR(b.lat - a.lat), dLng = toR(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(h)));
 }
 
 // ── 檢查歇業：重新查一次所有有 Google 編號的收藏（含分店）的營業狀態 ──
@@ -94,13 +103,15 @@ async function checkStatus() {
     if (ok !== true) { stoppedByLimit = true; return; }
     try {
       const res = await fetch(`https://places.googleapis.com/v1/places/${p.google_place_id}`, {
-        headers: { 'X-Goog-Api-Key': key as string, 'X-Goog-FieldMask': 'id,businessStatus' }, cache: 'no-store', signal: AbortSignal.timeout(12000),
+        headers: { 'X-Goog-Api-Key': key as string, 'X-Goog-FieldMask': 'id,businessStatus,location' }, cache: 'no-store', signal: AbortSignal.timeout(12000),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) { console.error('status check', p.id, d?.error?.message); return; }
       const st = d.businessStatus || '';
       checked++;
-      await sb.from('places').update({ business_status: st || null, status_checked_at: new Date().toISOString() }).eq('id', p.id);
+      const upd: any = { business_status: st || null, status_checked_at: new Date().toISOString() };
+      if (d.location?.latitude != null) { upd.lat = d.location.latitude; upd.lng = d.location.longitude; } // 順便存座標（之後排行程用）
+      await sb.from('places').update(upd).eq('id', p.id);
       if (st === 'CLOSED_PERMANENTLY' || st === 'CLOSED_TEMPORARILY') closed.push({ id: p.id, name: p.name, status: st });
       else if (p.business_status && p.business_status !== 'OPERATIONAL' && st === 'OPERATIONAL') reopened.push({ id: p.id, name: p.name });
     } catch (e) { console.error('status check', p.id, e); }
@@ -129,11 +140,27 @@ export async function POST(req: Request) {
     const q = [nm, p.address || p.city || ''].filter(Boolean).join(' ').slice(0, 120);
     const cands = await searchGoogle(q, p.country || '');
     if (!cands.length) { notFound.push({ id: p.id, name: p.name }); return; }
-    const sure = cands.find((c: any) => p.address && addrMatch(p.address, c.address) && (nameSim(p.name, c.name) || nameSim(nm, c.name)) && !usedIds.has(c.id));
+    // 用「你存的地址」找出它在地圖上的位置，再跟候選店家比距離
+    // （韓國有道路名、地號兩種地址，字面對不上，但位置一樣）
+    let here: any = null;
+    if (p.address && (await sb.rpc('bump_usage', { p_kind: 'backfill', p_limit: LIMIT_BACKFILL, p_n: 1 })).data === true) {
+      const g = await searchGoogle(String(p.address).slice(0, 120), p.country || '');
+      if (g[0]?.lat != null) here = { lat: g[0].lat, lng: g[0].lng };
+    }
+    cands.forEach((c: any) => { c.dist = distM(here, c); });
+    const nameOk = (c: any) => nameSim(p.name, c.name) || nameSim(nm, c.name);
+    const near = (c: any) => c.dist != null && c.dist <= 150;
+    const sure = cands.find((c: any) => !usedIds.has(c.id) && (
+      (p.address && addrMatch(p.address, c.address) && nameOk(c)) ||   // 地址一樣＋店名像
+      (near(c) && nameOk(c)) ||                                       // 150 公尺內＋店名像
+      (near(c) && c === cands[0] && cands.filter(near).length === 1)    // 150 公尺內只有這一間，而且是第一筆
+    ));
     if (sure) {
-      const { error: e } = await sb.from('places').update({ google_place_id: sure.id, business_status: sure.status || null, status_checked_at: new Date().toISOString() }).eq('id', p.id);
+      const { error: e } = await sb.from('places').update({ google_place_id: sure.id, business_status: sure.status || null, status_checked_at: new Date().toISOString(), lat: sure.lat ?? null, lng: sure.lng ?? null }).eq('id', p.id);
       if (!e) { usedIds.add(sure.id); applied.push({ id: p.id, name: p.name, cand: sure }); return; }
     }
+    // 需要確認的：近的排前面
+    cands.sort((a: any, b: any) => (a.dist ?? 1e9) - (b.dist ?? 1e9));
     review.push({ id: p.id, name: p.name, address: p.address || '', cands });
   }
   // 5 筆一組同時查

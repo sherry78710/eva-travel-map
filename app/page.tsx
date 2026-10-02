@@ -1030,7 +1030,7 @@ function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCou
   }
   async function pickBackfill(item:any, cand:any){
     if(cand){
-      const { error } = await sb.from('places').update({ google_place_id:cand.id, business_status: cand.status || null, status_checked_at: new Date().toISOString() }).eq('id', item.id);
+      const { error } = await sb.from('places').update({ google_place_id:cand.id, business_status: cand.status || null, status_checked_at: new Date().toISOString(), lat: cand.lat ?? null, lng: cand.lng ?? null }).eq('id', item.id);
       if(error){ alert('儲存失敗：'+(error.message||'')); return; }
     }
     setBf((b:any)=>({ ...b, review:(b.review||[]).filter((r:any)=>r.id!==item.id), picked:(b.picked||0)+(cand?1:0) }));
@@ -1193,6 +1193,7 @@ function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCou
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:14, fontWeight:500 }}>{c.name}</div>
                       <div style={{ fontSize:12, color:"#6b655c" }}>{c.address}</div>
+                      {c.dist!=null && <div style={{ fontSize:12, fontWeight:600, color: c.dist<=150 ? "#0F6E56" : c.dist<=1000 ? "#854F0B" : "#A32D2D", marginTop:2 }}>距離你存的地址 {c.dist<1000 ? `${c.dist} 公尺` : `${(c.dist/1000).toFixed(1)} 公里`}</div>}
                     </div>
                     <button onClick={()=>pickBackfill(it,c)} style={{ flexShrink:0, padding:"6px 10px", borderRadius:10, border:"none", background:"#3C3C3C", color:"#fff", fontSize:13, cursor:"pointer" }}>是這間</button>
                   </div>
@@ -3140,6 +3141,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       const filled:string[] = [];
       // 自己找到的店：名稱、地圖搜尋名稱換成 Google 上的正式店名
       n.business_status = d.business_status || c.status || null;
+      if(d.lat!=null){ n.lat = d.lat; n.lng = d.lng; }
       n.status_checked_at = new Date().toISOString();
       if(manual && c.name){ n.name=c.name; n.map_query=c.name; filled.push('name','map_query'); }
       else if(!String(x.name||'').trim() && c.name){ n.name=c.name; filled.push('name'); } // 名稱空白時也帶入
@@ -5536,6 +5538,7 @@ export default function App() {
       sources: p.source_url ? [{ url:p.source_url, at:new Date().toISOString() }] : [],
       business_status: p.business_status || null,
       status_checked_at: p.status_checked_at || null,
+      lat: p.lat ?? null, lng: p.lng ?? null,
     };
     const {data,error}=await sb.from('places').insert([payload]).select().single();
     if(!error&&data) setPlaces(ps=>[{...data, map_query:data.summary||'', branches:data.branches||[]},...ps]);
@@ -5610,6 +5613,7 @@ export default function App() {
       sources: syncSources(u),
       business_status: u.business_status || null,
       status_checked_at: u.status_checked_at || null,
+      lat: u.lat ?? null, lng: u.lng ?? null,
     }).eq('id',u.id);
     if(!error){ setPlaces(ps=>ps.map(p=>p.id===u.id?u:p)); setSelected(u); }
     else { console.error('handleEdit error:', error); alert('儲存失敗：' + (error?.message || JSON.stringify(error))); }
