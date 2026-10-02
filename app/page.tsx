@@ -626,7 +626,17 @@ const STATUS_CFG = {
 const FAVORITE_CFG = { label:"最愛", markOn:"♥", markOff:"♡" };
 // 超想去：所有收藏都是想去的，特別想去的再標星星（去過的店不算在「超想去」裡）
 const MUST_GO_CFG = { label:"超想去", markOn:"★", markOff:"☆" };
-const isMustGo = (p:any) => !!p?.must_go && p?.status!=="visited";
+const isMustGo = (p:any) => !!p?.must_go && p?.status!=="visited" && p?.business_status!=="CLOSED_PERMANENTLY";
+// 營業狀態（Google）：已歇業／暫停營業
+function bizInfo(s:any){
+  if(s==="CLOSED_PERMANENTLY") return { label:"已歇業", color:"#A32D2D", bg:"#FCEBEB" };
+  if(s==="CLOSED_TEMPORARILY") return { label:"暫停營業", color:"#854F0B", bg:"#FAEEDA" };
+  return null;
+}
+function BizTag({ status }:any){
+  const b = bizInfo(status); if(!b) return null;
+  return <span style={{ marginLeft:6, fontSize:11, fontWeight:600, color:b.color, background:b.bg, padding:"1px 6px", borderRadius:6, verticalAlign:"middle", whiteSpace:"nowrap" }}>{b.label}</span>;
+}
 // 狀態篩選：超想去／去過／最愛
 const FILTERS = [
   { key:"must_go",  label:`${MUST_GO_CFG.markOn} ${MUST_GO_CFG.label}`, test:(p:any)=>isMustGo(p) },
@@ -691,7 +701,7 @@ function PlaceRow({ place, onClick }) {
         {isMustGo(place) && <MustGoBadge corner="tl" />}
       </div>
       <div style={{ flex:1 }}>
-        <div style={{ fontSize:15, fontWeight:600, color:"#000", marginBottom:2 }}>{place.name}{place._branchName ? ` · ${place._branchName}` : ""}</div>
+        <div style={{ fontSize:15, fontWeight:600, color:"#000", marginBottom:2 }}>{place.name}{place._branchName ? ` · ${place._branchName}` : ""}<BizTag status={place.business_status} /></div>
         <div style={{ fontSize:12, color:"#8E8E93" }}>{[place.district, place.neighborhood].filter(Boolean).join(" ")}{place.types?.[0] ? ` · ${place.types[0]}` : ""}</div>
         {place.note && <div style={{ fontSize:11, color:"#636366", marginTop:2, fontStyle:"italic" }}>{place.note}</div>}
         {closedStatus==='closed' && <span style={{ display:"inline-block", marginTop:4, padding:"2px 8px", borderRadius:20, fontSize:10, fontWeight:500, background:"#F5E6E4", color:"#A85550" }}>● 今日公休</span>}
@@ -1007,9 +1017,20 @@ function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCou
       if(onReload) onReload();
     }catch(_){ setBf({ status:'error', msg:'連線失敗，請稍後再試' }); }
   }
+  const [sc,setSc] = useState<any>({ status:'idle' });
+  async function runStatusCheck(){
+    setSc({ status:'loading' });
+    try{
+      const res = await fetch('/api/backfill-ids', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ mode:'status' }) });
+      const d = await res.json().catch(()=>({}));
+      if(!res.ok || d.error){ setSc({ status:'error', msg:d.error||`失敗（代碼 ${res.status}）` }); return; }
+      setSc({ status:'done', ...d });
+      if(onReload) onReload();
+    }catch(_){ setSc({ status:'error', msg:'連線失敗，請稍後再試' }); }
+  }
   async function pickBackfill(item:any, cand:any){
     if(cand){
-      const { error } = await sb.from('places').update({ google_place_id:cand.id }).eq('id', item.id);
+      const { error } = await sb.from('places').update({ google_place_id:cand.id, business_status: cand.status || null, status_checked_at: new Date().toISOString() }).eq('id', item.id);
       if(error){ alert('儲存失敗：'+(error.message||'')); return; }
     }
     setBf((b:any)=>({ ...b, review:(b.review||[]).filter((r:any)=>r.id!==item.id), picked:(b.picked||0)+(cand?1:0) }));
@@ -1142,6 +1163,22 @@ function Settings({ countries, types, countryOrder, geoData, onBack, onUpdateCou
                 <div style={{ fontSize:13, color:"#0F6E56", marginTop:10, lineHeight:1.6 }}>
                   自動補上 {(bf.applied||[]).length} 筆{bf.picked?`，你確認了 ${bf.picked} 筆`:""}・需要確認 {(bf.review||[]).length} 筆・Google 找不到 {(bf.notFound||[]).length} 筆
                   {bf.more ? <div style={{ color:"#854F0B" }}>還有沒處理完的，明天再按一次「開始」</div> : null}
+                </div>
+              )}
+            </div>
+            <div style={{ background:"#FDF8F3", borderRadius:16, padding:"14px 16px", marginBottom:12 }}>
+              <div style={{ fontSize:15, fontWeight:600 }}>檢查歇業</div>
+              <div style={{ fontSize:13, color:"#6b655c", marginTop:4, lineHeight:1.6 }}>重新向 Google 檢查所有有 Google 編號的收藏，是否已歇業或暫停營業。建議出發前檢查一次。沒有 Google 編號的收藏查不到，可以先用上面的「補上 Google 編號」。</div>
+              <button onClick={runStatusCheck} disabled={sc.status==='loading'} style={{ marginTop:12, width:"100%", padding:12, borderRadius:12, border:"none", background:sc.status==='loading'?"#C7C7CC":"#3C3C3C", color:"#fff", fontSize:15, fontWeight:600, cursor:"pointer" }}>{sc.status==='loading'?"檢查中…":"開始"}</button>
+              {sc.status==='error' && <div style={{ fontSize:13, color:"#C0392B", marginTop:8 }}>{sc.msg}</div>}
+              {sc.status==='done' && (
+                <div style={{ fontSize:13, marginTop:10, lineHeight:1.6 }}>
+                  <div style={{ color:"#0F6E56" }}>檢查了 {sc.checked} 筆{sc.noId?`・${sc.noId} 筆沒有 Google 編號沒檢查`:""}</div>
+                  {(sc.closed||[]).length ? (sc.closed||[]).map((c:any)=>(
+                    <div key={c.id} style={{ color: c.status==='CLOSED_PERMANENTLY' ? "#A32D2D" : "#854F0B" }}>・{c.name}：{c.status==='CLOSED_PERMANENTLY' ? "已歇業" : "暫停營業"}</div>
+                  )) : <div style={{ color:"#6b655c" }}>沒有發現歇業的店</div>}
+                  {(sc.reopened||[]).map((c:any)=><div key={c.id} style={{ color:"#0F6E56" }}>・{c.name}：恢復營業</div>)}
+                  {sc.more && <div style={{ color:"#854F0B" }}>今天的檢查次數用完了，明天再按一次</div>}
                 </div>
               )}
             </div>
@@ -1405,6 +1442,7 @@ function Home({ places, countries, countryOrder, trips, showNextTrip, onNav, onT
               <button key={p.id} onClick={()=>onNav("detail",p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left", display:"flex", flexDirection:"column", justifyContent:"flex-start", alignItems:"stretch", padding:0 }}>
                 <div style={{ height:110, flexShrink:0, background:p.photos?.[0]?"none":"#EDE8E2", position:"relative", overflow:"hidden" }}>
                   {isMustGo(p) && <MustGoBadge corner="tr" />}
+                  {bizInfo(p.business_status) && <span style={{ position:"absolute", zIndex:1, top:6, left:6, fontSize:11, fontWeight:600, color:bizInfo(p.business_status)!.color, background:bizInfo(p.business_status)!.bg, padding:"2px 7px", borderRadius:6 }}>{bizInfo(p.business_status)!.label}</span>}
                   {p.photos?.[0]
                     ? <img src={p.photos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", ...coverStyle(p.photos[0], p.cover_position) }} />
                     : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>{p.types?.[0]==="餐廳"?"🍽️":p.types?.[0]==="咖啡廳"?"☕":p.types?.[0]==="景點"?"🌸":p.types?.[0]==="市場"?"🛒":"📍"}</div>
@@ -1587,6 +1625,7 @@ function CountryPage({ country, places, onBack, onSelect, cityOrder, onUpdateCit
                     <button key={p.id+'_'+gi} onClick={()=>onSelect(p._origPlace||p)} style={{ background:"#FDF8F3", borderRadius:12, overflow:"hidden", border:"none", cursor:"pointer", textAlign:"left", display:"flex", flexDirection:"column", justifyContent:"flex-start", alignItems:"stretch", padding:0 }}>
                       <div style={{ height:110, flexShrink:0, background:"#EDE8E2", position:"relative", overflow:"hidden" }}>
                         {isMustGo(p) && <MustGoBadge corner="tr" />}
+                  {bizInfo(p.business_status) && <span style={{ position:"absolute", zIndex:1, top:6, left:6, fontSize:11, fontWeight:600, color:bizInfo(p.business_status)!.color, background:bizInfo(p.business_status)!.bg, padding:"2px 7px", borderRadius:6 }}>{bizInfo(p.business_status)!.label}</span>}
                         {p.photos?.[0]
                           ? <img src={p.photos[0]} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", ...coverStyle(p.photos[0], p.cover_position) }} />
                           : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28 }}>{p.types?.[0]==="餐廳"?"🍽️":p.types?.[0]==="咖啡廳"?"☕":p.types?.[0]==="景點"?"🌸":p.types?.[0]==="市場"?"🛒":"📍"}</div>
@@ -3100,6 +3139,8 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       const n:any = {...x, google_place_id:c.id, branches:(x.branches||[]).filter((b:any)=>b.google_place_id!==c.id)};
       const filled:string[] = [];
       // 自己找到的店：名稱、地圖搜尋名稱換成 Google 上的正式店名
+      n.business_status = d.business_status || c.status || null;
+      n.status_checked_at = new Date().toISOString();
       if(manual && c.name){ n.name=c.name; n.map_query=c.name; filled.push('name','map_query'); }
       else if(!String(x.name||'').trim() && c.name){ n.name=c.name; filled.push('name'); } // 名稱空白時也帶入
       if(addr){ n.address=addr; filled.push('address');
@@ -3332,10 +3373,10 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
             )}
             <div style={{ fontSize:12, color:"#8E8E93", marginBottom:2 }}>Google 地圖找到 {cands.length} 間{cands.length>1?"・可以設一間主店，其他加為分店":""}</div>
             {cands.map((c:any)=>{ const use=candUse[c.id]; return (
-              <div key={c.id} style={{ padding:"10px 0", borderTop:"1px solid #F0EBE5", marginTop:8 }}>
+              <div key={c.id} style={{ padding:"10px 0", borderTop:"1px solid #F0EBE5", marginTop:8, opacity: bizInfo(c.status) && use!=='main' ? 0.6 : 1 }}>
                 <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:15, fontWeight:600, color:"#000" }}>{c.name}{use==='main'&&<span style={{ marginLeft:6, fontSize:11, color:"#fff", background:"#3C3C3C", padding:"1px 6px", borderRadius:6, verticalAlign:"middle" }}>主店</span>}{use==='branch'&&<span style={{ marginLeft:6, fontSize:11, color:"#185FA5", background:"#E6F1FB", padding:"1px 6px", borderRadius:6, verticalAlign:"middle" }}>分店</span>}</div>
+                    <div style={{ fontSize:15, fontWeight:600, color:"#000" }}>{c.name}<BizTag status={c.status} />{use==='main'&&<span style={{ marginLeft:6, fontSize:11, color:"#fff", background:"#3C3C3C", padding:"1px 6px", borderRadius:6, verticalAlign:"middle" }}>主店</span>}{use==='branch'&&<span style={{ marginLeft:6, fontSize:11, color:"#185FA5", background:"#E6F1FB", padding:"1px 6px", borderRadius:6, verticalAlign:"middle" }}>分店</span>}</div>
                     <div style={{ fontSize:13, color:"#6b655c", marginTop:2 }}>{c.address}</div>
                   </div>
                   <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.name)}&query_place_id=${c.id}`} target="_blank" rel="noreferrer" aria-label="在 Google 地圖查看"
@@ -3842,6 +3883,11 @@ function Detail({ place, onBack, onStatusChange, onFavoriteToggle, onMustGoToggl
               : <a href={srcs[0].url} target="_blank" rel="noreferrer" title={`打開${src.label}`} style={st}>{inner}</a>;
           })()}
         </div>
+        {bizInfo(place.business_status) && (
+          <div style={{ background:bizInfo(place.business_status)!.bg, color:bizInfo(place.business_status)!.color, borderRadius:14, padding:"10px 14px", marginBottom:12, fontSize:14, fontWeight:600 }}>
+            ⚠ {place.business_status==="CLOSED_PERMANENTLY" ? "這間店已永久歇業" : "這間店目前暫停營業"}{place.status_checked_at ? `（${shortDate(place.status_checked_at)} 檢查）` : ""}
+          </div>
+        )}
         {addedMsg && <div style={{ textAlign:"center", fontSize:12, color:"#0F6E56", marginTop:-6, marginBottom:12 }}>{addedMsg}</div>}
 
         {branchLocations(place).map((loc:any, i:number) => {
@@ -5488,6 +5534,8 @@ export default function App() {
       cover_position: normPos(p.cover_position, p.photos),
       must_go: !!p.must_go,
       sources: p.source_url ? [{ url:p.source_url, at:new Date().toISOString() }] : [],
+      business_status: p.business_status || null,
+      status_checked_at: p.status_checked_at || null,
     };
     const {data,error}=await sb.from('places').insert([payload]).select().single();
     if(!error&&data) setPlaces(ps=>[{...data, map_query:data.summary||'', branches:data.branches||[]},...ps]);
@@ -5521,7 +5569,7 @@ export default function App() {
     const addRecs = recLines(nf.recommendations).filter((l:string)=>{ const k=normName(parseRec(l).name); if(!k || seen.has(k)) return false; seen.add(k); return true; });
     const patch:any = { sources:srcs, photos, recommendations:[...exRecs, ...addRecs] };
     if(!ex.source_url && nf.source_url) patch.source_url = nf.source_url;
-    if(!ex.google_place_id && nf.google_place_id) patch.google_place_id = nf.google_place_id;
+    if(!ex.google_place_id && nf.google_place_id){ patch.google_place_id = nf.google_place_id; patch.business_status = nf.business_status || null; patch.status_checked_at = nf.status_checked_at || null; }
     if(!(ex.address||'').trim() && nf.address) patch.address = nf.address;
     if(!(ex.opening_hours||'').trim() && nf.opening_hours) patch.opening_hours = nf.opening_hours;
     if(!(ex.note||'').trim() && nf.note) patch.note = nf.note;
@@ -5560,6 +5608,8 @@ export default function App() {
       cover_position: normPos(u.cover_position, u.photos),
       must_go: !!u.must_go,
       sources: syncSources(u),
+      business_status: u.business_status || null,
+      status_checked_at: u.status_checked_at || null,
     }).eq('id',u.id);
     if(!error){ setPlaces(ps=>ps.map(p=>p.id===u.id?u:p)); setSelected(u); }
     else { console.error('handleEdit error:', error); alert('儲存失敗：' + (error?.message || JSON.stringify(error))); }

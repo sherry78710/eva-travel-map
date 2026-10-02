@@ -349,14 +349,17 @@ async function searchGoogle(query: string, country: string) {
     headers: {
       'content-type': 'application/json',
       'X-Goog-Api-Key': key,
-      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress',
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.businessStatus',
     },
     body: JSON.stringify({ textQuery: query, languageCode: langFor(country), pageSize: 3 }),
     signal: AbortSignal.timeout(12000),
   });
   const data = await res.json();
   if (!res.ok) { console.error('searchText', data); return []; }
-  return (data.places || []).map((p: any) => ({ id: p.id, name: p.displayName?.text || '', address: p.formattedAddress || '' }));
+  const list = (data.places || []).map((p: any) => ({ id: p.id, name: p.displayName?.text || '', address: p.formattedAddress || '', status: p.businessStatus || '' }));
+  // 營業中的排前面，歇業／暫停營業的排後面
+  const rank = (s: string) => (s === 'CLOSED_PERMANENTLY' ? 2 : s === 'CLOSED_TEMPORARILY' ? 1 : 0);
+  return list.map((c: any, i: number) => ({ c, i })).sort((a: any, b: any) => rank(a.c.status) - rank(b.c.status) || a.i - b.i).map((x: any) => x.c);
 }
 
 export async function POST(req: NextRequest) {

@@ -70,16 +70,49 @@ async function searchGoogle(query: string, country: string) {
   if (!key || !query) return [];
   const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress' },
+    headers: { 'content-type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.businessStatus' },
     body: JSON.stringify({ textQuery: query, languageCode: langFor(country), pageSize: 3 }),
     signal: AbortSignal.timeout(12000),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) { console.error('backfill searchText', data); return []; }
-  return (data.places || []).map((p: any) => ({ id: p.id, name: p.displayName?.text || '', address: p.formattedAddress || '' }));
+  return (data.places || []).map((p: any) => ({ id: p.id, name: p.displayName?.text || '', address: p.formattedAddress || '', status: p.businessStatus || '' }));
 }
 
-export async function POST() {
+// ── 檢查歇業：重新查一次所有有 Google 編號的收藏（含分店）的營業狀態 ──
+const LIMIT_STATUS = 200;
+async function checkStatus() {
+  const key = process.env.GOOGLE_PLACES_API_KEY;
+  if (!key) return NextResponse.json({ error: '缺少 GOOGLE_PLACES_API_KEY' }, { status: 500 });
+  const { data: all, error } = await sb.from('places').select('id,name,google_place_id,branches,business_status');
+  if (error) return NextResponse.json({ error: '讀取收藏失敗：' + error.message }, { status: 500 });
+  const rows = (all || []).filter((p: any) => p.google_place_id);
+  const closed: any[] = [], reopened: any[] = [];
+  let checked = 0, stoppedByLimit = false;
+  async function one(p: any) {
+    const { data: ok } = await sb.rpc('bump_usage', { p_kind: 'statuscheck', p_limit: LIMIT_STATUS, p_n: 1 });
+    if (ok !== true) { stoppedByLimit = true; return; }
+    try {
+      const res = await fetch(`https://places.googleapis.com/v1/places/${p.google_place_id}`, {
+        headers: { 'X-Goog-Api-Key': key as string, 'X-Goog-FieldMask': 'id,businessStatus' }, cache: 'no-store', signal: AbortSignal.timeout(12000),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { console.error('status check', p.id, d?.error?.message); return; }
+      const st = d.businessStatus || '';
+      checked++;
+      await sb.from('places').update({ business_status: st || null, status_checked_at: new Date().toISOString() }).eq('id', p.id);
+      if (st === 'CLOSED_PERMANENTLY' || st === 'CLOSED_TEMPORARILY') closed.push({ id: p.id, name: p.name, status: st });
+      else if (p.business_status && p.business_status !== 'OPERATIONAL' && st === 'OPERATIONAL') reopened.push({ id: p.id, name: p.name });
+    } catch (e) { console.error('status check', p.id, e); }
+  }
+  for (let i = 0; i < rows.length && !stoppedByLimit; i += 5) await Promise.all(rows.slice(i, i + 5).map(one));
+  console.log('status check', JSON.stringify({ total: rows.length, checked, closed: closed.length }));
+  return NextResponse.json({ checked, total: rows.length, noId: (all || []).length - rows.length, closed, reopened, more: stoppedByLimit });
+}
+
+export async function POST(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  if (body?.mode === 'status') return checkStatus();
   const { data: all, error } = await sb.from('places').select('id,name,summary,country,city,address,google_place_id');
   if (error) return NextResponse.json({ error: '讀取收藏失敗：' + error.message }, { status: 500 });
   const usedIds = new Set((all || []).map((p: any) => p.google_place_id).filter(Boolean));
@@ -98,7 +131,7 @@ export async function POST() {
     if (!cands.length) { notFound.push({ id: p.id, name: p.name }); return; }
     const sure = cands.find((c: any) => p.address && addrMatch(p.address, c.address) && (nameSim(p.name, c.name) || nameSim(nm, c.name)) && !usedIds.has(c.id));
     if (sure) {
-      const { error: e } = await sb.from('places').update({ google_place_id: sure.id }).eq('id', p.id);
+      const { error: e } = await sb.from('places').update({ google_place_id: sure.id, business_status: sure.status || null, status_checked_at: new Date().toISOString() }).eq('id', p.id);
       if (!e) { usedIds.add(sure.id); applied.push({ id: p.id, name: p.name, cand: sure }); return; }
     }
     review.push({ id: p.id, name: p.name, address: p.address || '', cands });
