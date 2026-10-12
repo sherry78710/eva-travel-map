@@ -128,10 +128,48 @@ function findRedirect(html: string, base: string) {
   for (const re of pats) {
     const m = html.match(re);
     if (m && m[1]) {
-      try { const u = new URL(decodeEntities(m[1].replace(/\\\//g, '/')), base).toString(); if (u !== base) return u; } catch {}
+      try {
+        const u = new URL(decodeEntities(m[1].replace(/\\\//g, '/')), base).toString();
+        // 只接受網頁網址（barcelona:// 這種是叫 App 打開的，伺服器讀不了）；也不要 /@/post/ 這種沒有帳號名稱的
+        if (!/^https?:\/\//i.test(u) || /threads\.(?:com|net)\/@\/post\//i.test(u)) continue;
+        if (u !== base) return u;
+      } catch {}
     }
   }
   return '';
+}
+
+// Threads 有時回傳沒有貼文資訊的空殼頁面（標題、內文都是空的）→ 改讀「嵌入頁」（給其他網站嵌入貼文用，不用登入）
+function threadsPostUrl(u: string) {
+  const m = (u || '').match(/threads\.(?:com|net)\/(@[^/?#]+)\/post\/([A-Za-z0-9_-]+)/i);
+  return m && m[1] !== '@' ? `https://www.threads.com/${m[1]}/post/${m[2]}` : '';
+}
+function htmlToText(html: string) {
+  return decodeEntities(html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|span|li|h\d)>/gi, '\n').replace(/<[^>]+>/g, ' '))
+    .split('\n').map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
+}
+async function readThreadsEmbed(postUrl: string) {
+  if (!postUrl) return null;
+  const page = postUrl + '/embed';
+  try {
+    const res = await fetch(page, { headers: { 'User-Agent': BROWSER_UA, 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8' }, cache: 'no-store', redirect: 'follow', signal: AbortSignal.timeout(10000) });
+    const html = await res.text();
+    const ogDesc = readOg(html, 'og:description');
+    // 嵌入頁的內文：優先找 BodyTextContainer / TextContentContainer，找不到就把整頁轉成文字
+    const block = html.match(/class="[^"]*(?:BodyTextContainer|TextContentContainer|PostText)[^"]*"[^>]*>([\s\S]{0,6000}?)<\/(?:div|span)>/i);
+    let text = ogDesc || (block ? htmlToText(block[1]) : '');
+    if (!text) {
+      const all = htmlToText(html).split('\n').filter(l => l.length > 1 && !/^(threads|log in|登入|view on threads|在 threads 查看|follow|追蹤|\d+[smhdw]?)$/i.test(l));
+      text = all.join('\n');
+    }
+    text = text.slice(0, 2000).trim();
+    const images = collectImages(html, '');
+    console.log('readThreadsEmbed', JSON.stringify({ status: res.status, htmlLen: html.length, textLen: text.length, images: images.length }));
+    if (text.length < 4 || looksBlocked('', text, '')) return null;
+    return { title: '', desc: text, images, og: images[0] || '', final: postUrl };
+  } catch (e) { console.error('readThreadsEmbed', e); return null; }
 }
 
 async function readPost(url: string) {
@@ -141,6 +179,7 @@ async function readPost(url: string) {
     { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1' },
   ];
   const isThreads = /threads\.(com|net)/i.test(url);
+  const triedEmbed = new Set<string>();
   for (const headers of tries) {
     let target = url;
     for (let hop = 0; hop < 3; hop++) {
@@ -154,6 +193,11 @@ async function readPost(url: string) {
         // Threads 有時只有標題、沒有內文
         const text = desc || (isThreads && title && !/^threads$/i.test(title.trim()) ? title : '');
         if (!looksBlocked(title, text, og)) return { title, desc: text, images: collectImages(html, og), og, final: readOg(html, 'og:url') || res.url || target };
+        // Threads 空殼頁面：知道真正的貼文網址（含帳號名稱）就改讀嵌入頁
+        if (isThreads) {
+          const pu = threadsPostUrl(res.url) || threadsPostUrl(target);
+          if (pu && !triedEmbed.has(pu)) { triedEmbed.add(pu); const em = await readThreadsEmbed(pu); if (em) return em; }
+        }
         // 拿不到內容：可能是轉址頁，找真正的網址再試
         const next = findRedirect(html, res.url || target);
         if (!next || next === target) break;
