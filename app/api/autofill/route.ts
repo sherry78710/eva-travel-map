@@ -256,28 +256,50 @@ types: ${JSON.stringify(ctx.types)}
 
 貼文標題: ${post.title}
 貼文內容: ${post.desc}${targetNote}`;
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001', max_tokens: 2500, system,
-      // 店名已確定（照片讀到、使用者指定、多間店模式）→ 不用再搜「是哪間店」，上限 2 次；要用猜的 → 上限 4 次
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: target ? 2 : 4 }],
-      messages: [{ role: 'user', content: user }],
-    }),
-    signal: AbortSignal.timeout(50000),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message || 'AI 呼叫失敗');
+  // 店名已確定（照片讀到、使用者指定、多間店模式）→ 不用再搜「是哪間店」，上限 2 次；要用猜的 → 上限 4 次
+  const tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: target ? 2 : 4 }];
+  const call = async (messages: any[], withTools: boolean, timeoutMs: number) => {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 2500, system, ...(withTools ? { tools } : {}), messages }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error?.message || 'AI 呼叫失敗');
+    return data;
+  };
   // 只看最後一次搜尋結果之後的文字，JSON 在那裡
-  const blocks: any[] = data.content || [];
-  let lastTool = -1;
-  blocks.forEach((b, i) => { if (b.type === 'web_search_tool_result' || b.type === 'server_tool_use') lastTool = i; });
-  const text = blocks.slice(lastTool + 1).map((c: any) => c.type === 'text' ? c.text : '').join('').replace(/```json|```/g, '').trim();
-  const start = text.indexOf('{'), end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error('AI 沒有回傳可用的資料');
-  try { return JSON.parse(text.slice(start, end + 1)); }
-  catch { throw new Error('AI 回傳格式錯誤'); }
+  const parse = (blocks: any[]) => {
+    let lastTool = -1;
+    blocks.forEach((b, i) => { if (b.type === 'web_search_tool_result' || b.type === 'server_tool_use') lastTool = i; });
+    const text = blocks.slice(lastTool + 1).map((c: any) => c.type === 'text' ? c.text : '').join('').replace(/```json|```/g, '').trim();
+    const st = text.indexOf('{'), en = text.lastIndexOf('}');
+    if (st < 0 || en <= st) return null;
+    try { return JSON.parse(text.slice(st, en + 1)); } catch { return null; }
+  };
+
+  const started = Date.now();
+  const messages: any[] = [{ role: 'user', content: user }];
+  let data = await call(messages, true, 40000);
+  // AI 搜尋比較久時會先暫停（pause_turn），把它的進度送回去讓它繼續，最多 2 次
+  for (let i = 0; i < 2 && data.stop_reason === 'pause_turn' && Date.now() - started < 35000; i++) {
+    console.log('askClaude pause_turn → continue', i + 1);
+    messages.push({ role: 'assistant', content: data.content });
+    data = await call(messages, true, Math.max(10000, 45000 - (Date.now() - started)));
+  }
+  const first = parse(data.content || []);
+  if (first) return first;
+
+  // 還是沒有結果：用已經搜到的資料，請它直接整理成 JSON（不再上網）
+  console.log('askClaude fallback, stop_reason=', data.stop_reason);
+  const notes = (data.content || []).map((c: any) => c.type === 'text' ? c.text : '').join('').slice(0, 4000);
+  // 伺服器最多跑 60 秒，時間不夠就不再補救
+  if (Date.now() - started > 42000) throw new Error('AI 查太久了，請按重試');
+  const fb = await call([{ role: 'user', content: user + (notes ? `\n\n先前查到的資料：\n${notes}` : '') + '\n\n請不要再搜尋，直接用以上資料輸出規定的 JSON。' }], false, 15000);
+  const second = parse(fb.content || []);
+  if (second) return second;
+  throw new Error('AI 沒有回傳可用的資料');
 }
 
 // ── 看照片＋內文：這篇介紹了幾間店？每張照片屬於哪一間？ ──
@@ -399,11 +421,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const post = await readPost(url);
-  if (!post) {
-    const site = /threads\./i.test(host) ? 'Threads' : 'IG';
+  let post: any = await readPost(url);
+  const site = /threads\./i.test(host) ? 'Threads' : 'IG';
+  const hasTarget = !!(body.target && typeof body.target.name === 'string' && body.target.name.trim());
+  if (!post && !hasTarget) {
     return NextResponse.json({ error: `讀不到這則 ${site} 貼文，可能暫時被擋住，等幾分鐘再按重試；私人帳號的貼文也讀不到` }, { status: 422 });
   }
+  // 讀不到貼文、但使用者已經輸入店名 → 跳過貼文，只用店名讓 AI 上網查
+  const postMissing = !post;
+  if (!post) post = { title: '', desc: `（讀不到這則 ${site} 貼文的內容，請只根據店名上網查資料；recommendations 的 source 一律填 web，note 根據網路上的介紹寫）`, images: [], og: '', final: url };
 
   // 捷徑已經在手機上抓好原圖時，就不用再抓預覽圖
   const skipImages = body.skipImages === true;
@@ -460,5 +486,5 @@ export async function POST(req: NextRequest) {
     } else searchNote = rS === 'limit' ? '今日 Google 搜尋次數已用完，地址請手動填寫' : rS;
   }
 
-  return NextResponse.json({ cover, images, caption: post.desc, fields, candidates, searchNote });
+  return NextResponse.json({ cover, images, caption: postMissing ? '' : post.desc, fields, candidates, searchNote: searchNote || (postMissing ? `讀不到 ${site} 貼文，已改用你輸入的店名查資料` : '') });
 }
