@@ -150,6 +150,35 @@ function htmlToText(html: string) {
     .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|span|li|h\d)>/gi, '\n').replace(/<[^>]+>/g, ' '))
     .split('\n').map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
 }
+// 從頁面裡的 JSON 資料挖出貼文文字（Threads 把內文放在 script 裡的資料，不在畫面 HTML）
+function jsonStr(raw: string) { try { return JSON.parse('"' + raw + '"'); } catch { return raw.replace(/\\n/g, '\n').replace(/\\"/g, '"'); } }
+function captionFromJson(html: string) {
+  const out: string[] = [];
+  const push = (t: string) => { const x = String(t || '').trim(); if (x.length > 1 && !out.includes(x)) out.push(x); };
+  let m: RegExpExecArray | null;
+  const reCap = /"caption"\s*:\s*\{[^{}]*?"text"\s*:\s*"((?:\\.|[^"\\])*)"/g;
+  while ((m = reCap.exec(html)) && out.length < 5) push(jsonStr(m[1]));
+  if (!out.length) {
+    const reFrag = /"plaintext"\s*:\s*"((?:\\.|[^"\\])*)"/g;
+    const frags: string[] = [];
+    while ((m = reFrag.exec(html)) && frags.length < 40) frags.push(jsonStr(m[1]));
+    if (frags.length) push(frags.join(''));
+  }
+  return out[0] || '';
+}
+// 頁面裡的照片：image_versions2 → candidates → url（Threads 的照片網址格式跟 IG 不一樣，所以另外找）
+function imagesFromJson(html: string) {
+  const clean = html.replace(/\\+\//g, '/').replace(/\\+u0026/gi, '&');
+  const out: string[] = []; const seen = new Set<string>();
+  const re = /"image_versions2"\s*:\s*\{\s*"candidates"\s*:\s*\[\s*\{[^{}]*?"url"\s*:\s*"(https:[^"]+)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(clean)) && out.length < 20) {
+    const u = decodeEntities(m[1]);
+    let key = u; try { key = new URL(u).pathname.split('/').pop() || u; } catch {}
+    if (seen.has(key)) continue; seen.add(key); out.push(u);
+  }
+  return out;
+}
 async function readThreadsEmbed(postUrl: string) {
   if (!postUrl) return null;
   const page = postUrl + '/embed';
@@ -157,16 +186,19 @@ async function readThreadsEmbed(postUrl: string) {
     const res = await fetch(page, { headers: { 'User-Agent': BROWSER_UA, 'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8' }, cache: 'no-store', redirect: 'follow', signal: AbortSignal.timeout(10000) });
     const html = await res.text();
     const ogDesc = readOg(html, 'og:description');
-    // 嵌入頁的內文：優先找 BodyTextContainer / TextContentContainer，找不到就把整頁轉成文字
-    const block = html.match(/class="[^"]*(?:BodyTextContainer|TextContentContainer|PostText)[^"]*"[^>]*>([\s\S]{0,6000}?)<\/(?:div|span)>/i);
-    let text = ogDesc || (block ? htmlToText(block[1]) : '');
+    // 1) og 標籤 2) 頁面 JSON 資料裡的 caption 3) 畫面上的文字區塊
+    let text = ogDesc || captionFromJson(html);
     if (!text) {
-      const all = htmlToText(html).split('\n').filter(l => l.length > 1 && !/^(threads|log in|登入|view on threads|在 threads 查看|follow|追蹤|\d+[smhdw]?)$/i.test(l));
-      text = all.join('\n');
+      const block = html.match(/class="[^"]*(?:BodyTextContainer|TextContentContainer|PostText)[^"]*"[^>]*>([\s\S]{0,6000}?)<\/(?:div|span)>/i);
+      if (block) text = htmlToText(block[1]);
     }
     text = text.slice(0, 2000).trim();
-    const images = collectImages(html, '');
-    console.log('readThreadsEmbed', JSON.stringify({ status: res.status, htmlLen: html.length, textLen: text.length, images: images.length }));
+    let images = imagesFromJson(html);
+    if (!images.length) images = collectImages(html, '');
+    // 診斷用：還是抓不到時，記下頁面裡相關關鍵字附近的內容，方便下次調整
+    const probe = (k: string) => { const i = html.indexOf(k); return i < 0 ? '' : html.slice(Math.max(0, i - 60), i + 160).replace(/\s+/g, ' '); };
+    console.log('readThreadsEmbed', JSON.stringify({ status: res.status, htmlLen: html.length, textLen: text.length, images: images.length,
+      ...(text ? {} : { hasCaption: html.includes('"caption"'), hasPlain: html.includes('"plaintext"'), hasIV2: html.includes('image_versions2'), title: (html.match(/<title>([^<]{0,80})/i) || [])[1] || '', probeCaption: probe('"caption"'), probeText: probe('"text":"') }) }));
     if (text.length < 4 || looksBlocked('', text, '')) return null;
     return { title: '', desc: text, images, og: images[0] || '', final: postUrl };
   } catch (e) { console.error('readThreadsEmbed', e); return null; }
