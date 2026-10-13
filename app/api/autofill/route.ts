@@ -212,7 +212,8 @@ async function storedThreadsText(postUrl: string) {
     const { data } = await sb.from('post_texts').select('text').eq('post_id', id).maybeSingle();
     const text = String(data?.text || '').trim();
     console.log('storedThreadsText', JSON.stringify({ id, found: !!text, len: text.length }));
-    if (text.length < 4) return null;
+    // 舊版存到的錯誤畫面文字（例如「Threads 無法顯示串文」）不能用
+    if (text.length < 4 || (text.length < 80 && /無法顯示|无法显示|can.t display|not available|log ?in|登入/i.test(text))) return null;
     return { title: '', desc: text.slice(0, 3000), images: [] as string[], og: '', final: threadsPostUrl(postUrl) || postUrl };
   } catch (e) { console.error('storedThreadsText', e); return null; }
 }
