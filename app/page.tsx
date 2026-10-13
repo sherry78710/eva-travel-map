@@ -2957,6 +2957,9 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
   useEffect(()=>{ setCandUse({}); },[cands]);
   const [scanInfo,setScanInfo] = useState<{kind:'ok'|'none'|'warn', text:string}|null>(null);
   const [redo,setRedo] = useState<any>(null);
+  // 用截圖整理：貼文讀不到時，AI 從截圖上抄下來的貼文文字
+  const shotText = useRef('');
+  const shotInputRef = useRef<HTMLInputElement>(null);
 
   function buildCtx(country:string){
     const geo = geoDataProp||GEO;
@@ -2968,7 +2971,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
   }
   function fetchAutofill(url:string, country:string, target:any, skipImages:boolean){
     return fetch('/api/autofill', { method:'POST', headers:{'content-type':'application/json'},
-      body: JSON.stringify({ url, country, ...buildCtx(country), skipImages, target }) })
+      body: JSON.stringify({ url, country, ...buildCtx(country), skipImages, target, postText: shotText.current || undefined }) })
       .then(async res=>{ let d:any=null; try{ d=await res.json(); }catch(_){} return { ok:res.ok, status:res.status, d }; })
       .catch(()=>({ ok:false, status:0, d:null }));
   }
@@ -3017,6 +3020,7 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
   async function runAutofill(url:string){
     if(!SOCIAL_RE.test(url) || lastUrl.current===url) return;
     lastUrl.current=url;
+    shotText.current='';
     const tok = ++runToken.current;
     const hadPhotos = (fRef.current.photos||[]).length > 0;
     setCands([]); setCandIdx(0);
@@ -3209,6 +3213,56 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
     setKnownName('');
   }
 
+  // 用截圖整理：在 Threads／IG App 截貼文畫面（也可以一起選自己存的照片）→ 上傳 → AI 讀截圖文字找店 → 上網查資料
+  async function runWithShots(e:any){
+    const files = Array.from(e.target.files||[]) as File[];
+    e.target.value = "";
+    const url = (fRef.current.source_url||'').trim();
+    if(!files.length || !SOCIAL_RE.test(url)) return;
+    const tok = ++runToken.current;
+    setAf({status:'loading', msg:`上傳 ${files.length} 張照片中…`});
+    const urls:string[] = [];
+    for(const file of files){
+      try{
+        const compressed = await compressImage(file);
+        const path = `places/shot_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+        const { error } = await sb.storage.from('photos').upload(path, compressed, { upsert: true, contentType: 'image/jpeg' });
+        if(!error) urls.push(sb.storage.from('photos').getPublicUrl(path).data.publicUrl);
+      }catch(_){}
+    }
+    if(tok!==runToken.current) return;
+    if(!urls.length){ setAf({status:'error', msg:'照片上傳失敗，請再試一次'}); return; }
+    const all = [...(fRef.current.photos||[]).filter((p:string)=>!urls.includes(p)), ...urls];
+    const cleared:any = { ...fRef.current, name:"", map_query:"", note:"", recommendations:"", review_highlights:null, types:[], photos:all };
+    setF(cleared); fRef.current=cleared;
+    setAutoKeys([]); setCands([]); setCandIdx(0); setGuess(false); setRedo(null); setScanInfo(null); setKnownName('');
+    shotText.current='';
+    setAf({status:'loading', msg:'AI 讀取截圖中…約需 20 秒'});
+    let d:any = {};
+    try{
+      const res = await fetch('/api/autofill', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ mode:'scan', url, photos: all, readText:true }) });
+      d = await res.json().catch(()=>({}));
+    }catch(_){}
+    if(tok!==runToken.current) return;
+    const caption = String(d.caption||'').trim();
+    if(d.fromShots) shotText.current = caption;
+    const places = (d.places||[]).map((p:any)=>({ name:p.name, hint:p.hint||'', photos:(p.photos||[]).map((n:number)=>all[n-1]).filter(Boolean) }));
+    if(places.length>=2){
+      setPreview({ cover: all[0], caption, count: all.length } as any);
+      setMulti({ url, country: fRef.current.country||'', caption, all, list: places, sel: places.map(()=>true), step:'pick', queue:[], pos:0 });
+      setAf({status:'done', msg:''});
+      return;
+    }
+    let target:any = null;
+    if(places.length===1){ target = { name: places[0].name, hint: places[0].hint }; setScanInfo({ kind:'ok', text:`截圖上讀到的店名：${places[0].name}` }); }
+    else if(!caption){ setAf({status:'error', msg: d.note || '截圖上讀不到文字，請換一張清楚一點的截圖，或直接輸入店名'}); return; }
+    else setScanInfo({ kind:'none', text:'截圖上沒讀到確定的店名，改由 AI 根據截圖文字上網找' });
+    setAf({status:'loading', msg:'根據截圖上網查資料中…約需 30 秒'});
+    const r = await fetchAutofill(url, fRef.current.country||'', target, true);
+    if(tok!==runToken.current) return;
+    applyAutofill(r, true);
+  }
+
   // 用正確店名重新整理收藏原因、推薦品項、網友怎麼說、類型（地址、營業時間、照片不動）
   async function redoAutofill(){
     const c = redo?.cand; if(!c) return;
@@ -3311,6 +3365,14 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
             {scanInfo && multi?.step!=='run' && <div style={{ fontSize:12, color: scanInfo.kind==='ok' ? "#0F6E56" : scanInfo.kind==='warn' ? "#A32D2D" : "#8E8E93", marginTop:6 }}>{scanInfo.text}</div>}
             {SOCIAL_RE.test(f.source_url||'') && multi?.step!=='run' && af.status!=='loading' && (af.status==='error' || guess || (af.status==='done' && !String(f.name||'').trim())) && (
               <div style={{ marginTop:10, background:"#F5F0EB", borderRadius:12, padding:"10px 12px" }}>
+                {af.status==='error' && !guess && (
+                  <div style={{ marginBottom:10 }}>
+                    <button onClick={()=>shotInputRef.current&&shotInputRef.current.click()}
+                      style={{ width:"100%", padding:"10px 12px", borderRadius:10, border:"1px solid #E2DBD2", background:"#fff", color:"#3C3C3C", fontSize:14, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>📷 用截圖整理</button>
+                    <div style={{ fontSize:11, color:"#A69C90", marginTop:4, lineHeight:1.5 }}>在 Threads／IG 截貼文畫面，從相簿選（可多張，也可以一起選自己存的照片）。照片會存進這筆收藏</div>
+                    <input ref={shotInputRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={runWithShots} />
+                  </div>
+                )}
                 <div style={{ fontSize:12, color:"#6b655c", marginBottom:6 }}>{guess ? "不是這間？" : "AI 找不到店名？"}知道店名（例如留言裡寫的）就直接輸入</div>
                 <div style={{ display:"flex", gap:8 }}>
                   <input value={knownName} onChange={e=>setKnownName(e.target.value)} placeholder="例：繁邦"

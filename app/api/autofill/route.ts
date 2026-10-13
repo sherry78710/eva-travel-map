@@ -397,7 +397,7 @@ types: ${JSON.stringify(ctx.types)}
 // ── 看照片＋內文：這篇介紹了幾間店？每張照片屬於哪一間？ ──
 // 店名常常印在照片上（不在內文），所以要讓 AI 看圖
 const OWN_PHOTO_RE = /^https:\/\/[^/]+\/storage\/v1\/object\/public\/photos\//;
-async function scanPlaces(caption: string, photos: string[]) {
+async function scanPlaces(caption: string, photos: string[], readText = false): Promise<{ places: any[]; text: string }> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error('缺少 ANTHROPIC_API_KEY');
   // 伺服器先把照片下載下來再直接交給 AI（不讓 AI 自己去網址抓，比較不會失敗）
@@ -424,9 +424,13 @@ async function scanPlaces(caption: string, photos: string[]) {
   });
   console.log('scan photos', JSON.stringify({ total: photos.length, sent }));
   content.push({ type: 'text', text: `貼文內容：\n${caption || '（沒有文字）'}\n\n照片共 ${photos.length} 張。` });
+  // 截圖模式：貼文讀不到，照片裡有使用者截的貼文畫面 → 順便把截圖上的文字抄下來
+  const textRule = readText ? `
+- 這次的照片裡有使用者在 Threads / IG App 截的貼文畫面。請另外輸出 "text"：把截圖上「貼文作者寫的內文」完整照抄（保留原文、換行，多張截圖依序接起來，重複的部分只抄一次）；留言裡有提到店名、地址、推薦品項的，也抄進來，前面加「留言：」。不要抄按讚數、時間、按鈕、帳號推薦這類介面文字。截圖上沒有文字就填空字串。
+- 截圖畫面本身也算一張照片：如果截圖裡主要是某間店的食物或店面照片，可以放進那間店的 photos。` : '';
   const system = `你是旅遊美食收藏助理。判斷這則 IG / Threads 貼文介紹了哪些實體店家或景點。店名常常印在照片上的小字（例如「📍店名」），也可能寫在內文。
 只輸出一個 JSON 物件，不要任何其他文字、不要 Markdown：
-{"places":[{"name":"店名，照照片或內文上的寫法","hint":"照片上或內文對這間的說明（推薦什麼、特色、分店），照原文，60 字內","photos":[這間店的照片編號，從 1 開始]}]}
+{"places":[{"name":"店名，照照片或內文上的寫法","hint":"照片上或內文對這間的說明（推薦什麼、特色、分店），照原文，60 字內","photos":[這間店的照片編號，從 1 開始]}]${readText ? ',"text":"截圖上的貼文文字"' : ''}}
 規則：
 - 依貼文出現的順序列出，最多 20 間。只列實體店家或景點，不要列城市、商圈、品牌總稱。
 - 每張照片最多屬於一間店。照片上沒寫店名時，依前後照片和畫面判斷屬於哪一間；判斷不出來就不要放進任何一間。
@@ -434,12 +438,12 @@ async function scanPlaces(caption: string, photos: string[]) {
 - 同一間店出現多次（例如照片 3、4、5 都是同一間），合併成一筆，photos 列出全部。
 - 整篇只介紹一間店，就只回傳一筆。
 - name 一定是店家本身的名稱。人名（藝人、網紅、貼文作者）不是店名；「員瑛同款燒肉」「銀座的燒肉店」這種描述也不是店名。照片和內文都看不到真正的店名時，name 填空字串。
-- 照片裡有 Google 地圖、Naver 地圖、Tabelog 這類「店家卡片截圖」時，以卡片上的店名為準（最可靠）。卡片同時有外文和當地語言店名時，name 用當地語言的寫法（日本用日文、韓國用韓文），例如「近江うし焼肉 にくTATSU 銀座店」。`;
+- 照片裡有 Google 地圖、Naver 地圖、Tabelog 這類「店家卡片截圖」時，以卡片上的店名為準（最可靠）。卡片同時有外文和當地語言店名時，name 用當地語言的寫法（日本用日文、韓國用韓文），例如「近江うし焼肉 にくTATSU 銀座店」。${textRule}`;
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 2000, system, messages: [{ role: 'user', content }] }),
-    signal: AbortSignal.timeout(40000),
+    body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: readText ? 4000 : 2000, system, messages: [{ role: 'user', content }] }),
+    signal: AbortSignal.timeout(readText ? 50000 : 40000),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error?.message || 'AI 呼叫失敗');
@@ -448,11 +452,12 @@ async function scanPlaces(caption: string, photos: string[]) {
   if (a < 0 || b <= a) throw new Error('AI 沒有回傳可用的資料');
   const j = JSON.parse(text.slice(a, b + 1));
   const used = new Set<number>();
-  return (Array.isArray(j.places) ? j.places : []).slice(0, 20).map((p: any) => {
+  const places = (Array.isArray(j.places) ? j.places : []).slice(0, 20).map((p: any) => {
     const idx = (Array.isArray(p.photos) ? p.photos : []).map((n: any) => Math.round(Number(n))).filter((n: number) => n >= 1 && n <= photos.length && !used.has(n));
     idx.forEach((n: number) => used.add(n));
     return { name: String(p.name || '').trim().slice(0, 80), hint: String(p.hint || '').trim().slice(0, 120), photos: idx };
   }).filter((p: any) => p.name);
+  return { places, text: readText ? String(j.text || '').trim().slice(0, 4000) : '' };
 }
 
 async function searchGoogle(query: string, country: string) {
@@ -497,15 +502,17 @@ export async function POST(req: NextRequest) {
   // 掃描模式：只判斷這篇介紹了幾間、每張照片屬於哪一間（不上網搜尋）
   if (body.mode === 'scan') {
     const photos: string[] = (Array.isArray(body.photos) ? body.photos : []).filter((u: any) => typeof u === 'string' && OWN_PHOTO_RE.test(u)).slice(0, 20);
+    const readText = body.readText === true;
     const post = await readPost(url);
     const caption = post ? [post.title, post.desc].filter(Boolean).join('\n') : '';
     if (!photos.length && !caption) return NextResponse.json({ places: [], caption: '' });
     const r = await bump('scan', LIMIT_SCAN);
     if (r !== 'ok') return NextResponse.json({ places: [], caption: post?.desc || '', note: r === 'limit' ? '今日多間判斷次數已用完，先當成一間整理' : r });
     try {
-      const places = await scanPlaces(caption, photos);
-      console.log('scan', JSON.stringify({ photos: photos.length, places: places.length }));
-      return NextResponse.json({ places, caption: post?.desc || '' });
+      const { places, text } = await scanPlaces(caption, photos, readText);
+      console.log('scan', JSON.stringify({ photos: photos.length, places: places.length, readText, textLen: text.length }));
+      // 截圖模式：貼文讀得到就用貼文，讀不到就用截圖上抄下來的文字
+      return NextResponse.json({ places, caption: post?.desc || text || '', fromShots: !post?.desc && !!text });
     } catch (e: any) {
       console.error('scan', e);
       await refund('scan', LIMIT_SCAN);
@@ -514,6 +521,10 @@ export async function POST(req: NextRequest) {
   }
 
   let post: any = await readPost(url);
+  // 截圖上抄下來的貼文文字（貼文讀不到時用）
+  const shotText = typeof body.postText === 'string' ? body.postText.trim().slice(0, 4000) : '';
+  const fromShots = !post && !!shotText;
+  if (fromShots) post = { title: '', desc: shotText, images: [], og: '', final: url };
   const site = /threads\./i.test(host) ? 'Threads' : 'IG';
   const hasTarget = !!(body.target && typeof body.target.name === 'string' && body.target.name.trim());
   if (!post && !hasTarget) {
@@ -578,5 +589,5 @@ export async function POST(req: NextRequest) {
     } else searchNote = rS === 'limit' ? '今日 Google 搜尋次數已用完，地址請手動填寫' : rS;
   }
 
-  return NextResponse.json({ cover, images, caption: postMissing ? '' : post.desc, fields, candidates, searchNote: searchNote || (postMissing ? `讀不到 ${site} 貼文，已改用你輸入的店名查資料` : '') });
+  return NextResponse.json({ cover, images, caption: postMissing ? '' : post.desc, fields, candidates, searchNote: searchNote || (postMissing ? `讀不到 ${site} 貼文，已改用你輸入的店名查資料` : '') || (fromShots ? '已用截圖上的文字整理' : '') });
 }
