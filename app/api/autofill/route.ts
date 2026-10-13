@@ -204,7 +204,22 @@ async function readThreadsEmbed(postUrl: string) {
   } catch (e) { console.error('readThreadsEmbed', e); return null; }
 }
 
+// 捷徑在手機上讀到的 Threads 貼文文字（伺服器被擋時用）
+async function storedThreadsText(postUrl: string) {
+  const id = (postUrl.match(/\/post\/([A-Za-z0-9_-]+)/) || [])[1];
+  if (!id) return null;
+  try {
+    const { data } = await sb.from('post_texts').select('text').eq('post_id', id).maybeSingle();
+    const text = String(data?.text || '').trim();
+    console.log('storedThreadsText', JSON.stringify({ id, found: !!text, len: text.length }));
+    if (text.length < 4) return null;
+    return { title: '', desc: text.slice(0, 3000), images: [] as string[], og: '', final: threadsPostUrl(postUrl) || postUrl };
+  } catch (e) { console.error('storedThreadsText', e); return null; }
+}
+
 async function readPost(url: string) {
+  // 網址本身就有貼文編號 → 先看捷徑有沒有存好文字（最快也最可靠）
+  if (/threads\.(com|net)/i.test(url) && /\/post\//.test(url)) { const st = await storedThreadsText(url); if (st) return st; }
   const tries: Record<string, string>[] = [
     { 'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)' },
     {},
@@ -228,7 +243,7 @@ async function readPost(url: string) {
         // Threads 空殼頁面：知道真正的貼文網址（含帳號名稱）就改讀嵌入頁
         if (isThreads) {
           const pu = threadsPostUrl(res.url) || threadsPostUrl(target);
-          if (pu && !triedEmbed.has(pu)) { triedEmbed.add(pu); const em = await readThreadsEmbed(pu); if (em) return em; }
+          if (pu && !triedEmbed.has(pu)) { triedEmbed.add(pu); const st = await storedThreadsText(pu); if (st) return st; const em = await readThreadsEmbed(pu); if (em) return em; }
         }
         // 拿不到內容：可能是轉址頁，找真正的網址再試
         const next = findRedirect(html, res.url || target);
