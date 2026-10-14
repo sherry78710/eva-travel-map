@@ -2981,9 +2981,10 @@ function Add({ onBack, onAdd, countries, types, geoData: geoDataProp, onAutoAddN
       if(!r.d){ setAf({status:'error', msg: r.status ? `伺服器錯誤（代碼 ${r.status}），請稍後再試` : '自動填寫失敗，請確認網路後再試'}); return; }
       const d:any = r.d;
       if(d.cover || d.caption){
-        setPreview({ cover: hadPhotos ? fRef.current.photos[0] : (d.cover||''), caption:d.caption||'', count: hadPhotos ? fRef.current.photos.length : (d.images||[]).length } as any);
         const imgs:string[] = (d.images && d.images.length ? d.images : (d.cover ? [d.cover] : []));
         const fresh = imgs.filter((u:string)=>!(fRef.current.photos||[]).includes(u));
+        // 有新抓到的貼文照片（例如捷徑在手機上存好的 Threads 照片）就用它當預覽
+        setPreview({ cover: fresh[0] || (hadPhotos ? fRef.current.photos[0] : (d.cover||'')), caption:d.caption||'', count: (fRef.current.photos||[]).length + fresh.length } as any);
         if(fresh.length){ const n={...fRef.current, photos:[...fresh, ...(fRef.current.photos||[])]}; setF(n); fRef.current=n; }
       }
       if(!r.ok || d.error){ setAf({status:'error', msg:(d.error||'自動填寫失敗')+`（代碼 ${r.status}）`}); return; }
