@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -72,6 +72,43 @@ function extractText(page: string): { text: string; how: string } {
   return { text: all, how: 'page' };
 }
 
+// 貼文照片：scontent 主機、路徑 /t51.xxx-15/ 的才是貼文照片（大頭貼是 -19、貼圖表情是別的格式）
+function postImages(html: string) {
+  const clean = html.replace(/\\+\//g, '/').replace(/\\+u0026/gi, '&').replace(/\\+u003d/gi, '=');
+  const re = /https?:\/\/[^"'\s<>\\]*?(?:cdninstagram\.com|fbcdn\.net)[^"'\s<>\\]*/g;
+  const seen = new Set<string>(); const out: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(clean)) !== null && out.length < 10) {
+    const u = decodeEntities(m[0]).replace(/[,;)]+$/, '');
+    if (!/\.(jpg|jpeg|webp|png|heic)/i.test(u)) continue;
+    let host = '', path = '';
+    try { const x = new URL(u); host = x.hostname; path = x.pathname; } catch { continue; }
+    if (!/^scontent/i.test(host) || !/\/t\d+\.\d+-15\//.test(path)) continue;
+    if (/s150x150|p150x150|s320x320|p320x320|_s\.jpg/i.test(u)) continue;
+    const key = path.split('/').pop() || u;
+    if (seen.has(key)) continue;
+    seen.add(key); out.push(u);
+  }
+  return out;
+}
+const MAX_BYTES = 10 * 1024 * 1024;
+async function saveImage(src: string): Promise<string> {
+  try {
+    const r = await fetch(src, { cache: 'no-store', signal: AbortSignal.timeout(12000), headers: {
+      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+      'Referer': 'https://www.threads.com/' } });
+    const type = (r.headers.get('content-type') || '').split(';')[0];
+    if (!r.ok || !type.startsWith('image/') || type.includes('gif')) return '';
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length < 15000 || buf.length > MAX_BYTES) return ''; // 太小的是表情、縮圖
+    const ext = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : 'jpg';
+    const path = `places/th_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error } = await sb.storage.from('photos').upload(path, buf, { contentType: type, upsert: true });
+    if (error) { console.error('shortcut-text image upload', error); return ''; }
+    return sb.storage.from('photos').getPublicUrl(path).data.publicUrl;
+  } catch (e) { console.error('shortcut-text image', e); return ''; }
+}
+
 async function readForm(req: NextRequest): Promise<{ page: string; page2: string; post: string }> {
   const ctype = req.headers.get('content-type') || '';
   if (ctype.includes('multipart/form-data') || ctype.includes('application/x-www-form-urlencoded')) {
@@ -108,7 +145,25 @@ export async function POST(req: NextRequest) {
   if (bumpErr) return NextResponse.json({ error: '計數功能出錯：' + bumpErr.message }, { status: 500 });
   if (ok !== true) return NextResponse.json({ error: '今日次數已用完' }, { status: 429 });
 
-  const { error } = await sb.from('post_texts').upsert({ post_id: id, text, how, updated_at: new Date().toISOString() }, { onConflict: 'post_id' });
+  // 照片：一般貼文頁優先（嵌入頁有時只有貼圖表情），找不到再用 og:image
+  let srcs = postImages(page2);
+  if (!srcs.length) srcs = postImages(page);
+  if (!srcs.length) { const og = readOg(page2, 'og:image') || readOg(page, 'og:image'); if (og) srcs = [og]; }
+  let images: string[] = [];
+  if (srcs.length) {
+    const { data: okUp } = await sb.rpc('bump_usage', { p_kind: 'upload', p_limit: 200, p_n: srcs.length });
+    if (okUp === true) {
+      for (let i = 0; i < srcs.length; i += 4) {
+        const batch = await Promise.all(srcs.slice(i, i + 4).map(saveImage));
+        batch.forEach(u => { if (u) images.push(u); });
+      }
+    }
+  }
+  console.log('shortcut-text images', JSON.stringify({ id, found: srcs.length, saved: images.length }));
+
+  const row: any = { post_id: id, text, how, images, updated_at: new Date().toISOString() };
+  let { error } = await sb.from('post_texts').upsert(row, { onConflict: 'post_id' });
+  if (error && /images/.test(error.message || '')) { delete row.images; ({ error } = await sb.from('post_texts').upsert(row, { onConflict: 'post_id' })); } // 資料表還沒有照片欄位
   if (error) { console.error('shortcut-text save', error); return NextResponse.json({ error: '存檔失敗：' + error.message }, { status: 500 }); }
-  return NextResponse.json({ ok: true, how, length: text.length });
+  return NextResponse.json({ ok: true, how, length: text.length, images: images.length });
 }
