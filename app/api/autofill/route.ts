@@ -209,12 +209,14 @@ async function storedThreadsText(postUrl: string) {
   const id = (postUrl.match(/\/post\/([A-Za-z0-9_-]+)/) || [])[1];
   if (!id) return null;
   try {
-    const { data } = await sb.from('post_texts').select('text').eq('post_id', id).maybeSingle();
+    let { data, error } = await sb.from('post_texts').select('text, images').eq('post_id', id).maybeSingle();
+    if (error) ({ data } = await sb.from('post_texts').select('text').eq('post_id', id).maybeSingle()); // 還沒有照片欄位
     const text = String(data?.text || '').trim();
+    const saved: string[] = (Array.isArray((data as any)?.images) ? (data as any).images : []).filter((u: any) => typeof u === 'string' && OWN_PHOTO_RE.test(u));
     console.log('storedThreadsText', JSON.stringify({ id, found: !!text, len: text.length }));
     // 舊版存到的錯誤畫面文字（例如「Threads 無法顯示串文」）不能用
     if (text.length < 4 || (text.length < 80 && /無法顯示|无法显示|can.t display|not available|log ?in|登入/i.test(text))) return null;
-    return { title: '', desc: text.slice(0, 3000), images: [] as string[], og: '', final: threadsPostUrl(postUrl) || postUrl };
+    return { title: '', desc: text.slice(0, 3000), images: [] as string[], og: '', final: threadsPostUrl(postUrl) || postUrl, saved };
   } catch (e) { console.error('storedThreadsText', e); return null; }
 }
 
@@ -543,7 +545,9 @@ export async function POST(req: NextRequest) {
     if (better.length) picked = better;
   }
   console.log('cover final:', skipImages ? 'skipped (shortcut photos)' : picked.length && picked[0] !== post.og ? `embed/html (${picked.length})` : 'og:image');
-  const images = (await Promise.all(picked.map(saveCover))).filter(Boolean);
+  // 捷徑在手機上讀貼文時已經存好的照片（Threads 擋伺服器時）直接用
+  const saved: string[] = Array.isArray(post.saved) ? post.saved : [];
+  const images = Array.from(new Set([...saved, ...(await Promise.all(picked.filter((u: string) => !saved.length || !skipImages).map(saveCover))).filter(Boolean)]));
   const cover = images[0] || '';
 
   const rAi = await bump('ai', LIMIT_AI);
