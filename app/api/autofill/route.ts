@@ -299,7 +299,7 @@ const TYPE_HINTS: Record<string, string> = {
   '酒吧': '以喝酒為主的店',
 };
 
-async function askClaude(post: { title: string; desc: string }, ctx: any) {
+async function askClaude(post: { title: string; desc: string }, ctx: any, photos: string[] = []) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error('缺少 ANTHROPIC_API_KEY');
   const typeRules = (ctx.types || []).filter((t: string) => TYPE_HINTS[t]).map((t: string) => `- ${t}：${TYPE_HINTS[t]}`).join('\n');
@@ -335,7 +335,9 @@ async function askClaude(post: { title: string; desc: string }, ctx: any) {
 ${typeRules || '（無）'}
 - highlights.good 3 到 5 條、caution 0 到 3 條。只寫多個來源重複提到的共通點，不要編造。
 - caution 只寫營業時間看不出來的事，例如：排隊很久、只收現金、要預約、限時用餐、座位少、價位偏高。不要寫營業時間、公休日、地址。
-- 所有說明文字用繁體中文。查不到就照貼文內容填，不要編造。`;
+- 所有說明文字用繁體中文。查不到就照貼文內容填，不要編造。
+- is_place 只有在貼文明顯不是介紹店家或景點（例如心情、新聞、問問題）時才填 false。貼文很短時（例如「第一餐直奔桐麵 爽哭」），裡面的專有名詞多半就是店名，一定要上網搜尋確認，不可以因為資訊少就填 false 或把 name 留空。
+- 有附貼文照片時一起看：碗、招牌、菜單、包裝、地圖卡片上常印有店名，可以當作找店的線索。`;
   const target = ctx.target && ctx.target.name ? ctx.target : null;
   const targetNote = target ? `
 
@@ -374,7 +376,21 @@ types: ${JSON.stringify(ctx.types)}
   };
 
   const started = Date.now();
-  const messages: any[] = [{ role: 'user', content: user }];
+  // 貼文照片（最多 3 張）一起給 AI 看：店名常印在碗、招牌上
+  const imgBlocks: any[] = [];
+  for (const u of photos.slice(0, 3)) {
+    try {
+      const r = await fetch(u, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+      let type = (r.headers.get('content-type') || '').split(';')[0].toLowerCase();
+      if (type === 'image/jpg') type = 'image/jpeg';
+      if (!r.ok || !['image/jpeg', 'image/png', 'image/webp'].includes(type)) continue;
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (!buf.length || buf.length > 4.5 * 1024 * 1024) continue;
+      imgBlocks.push({ type: 'image', source: { type: 'base64', media_type: type, data: buf.toString('base64') } });
+    } catch {}
+  }
+  const firstContent: any = imgBlocks.length ? [...imgBlocks, { type: 'text', text: user + `\n\n（上面附了 ${imgBlocks.length} 張貼文照片）` }] : user;
+  const messages: any[] = [{ role: 'user', content: firstContent }];
   let data = await call(messages, true, 40000);
   // AI 搜尋比較久時會先暫停（pause_turn），把它的進度送回去讓它繼續，最多 2 次
   for (let i = 0; i < 2 && data.stop_reason === 'pause_turn' && Date.now() - started < 35000; i++) {
@@ -559,7 +575,7 @@ export async function POST(req: NextRequest) {
     fields = await askClaude(post, {
       countries: body.countries || [], cities: body.cities || {}, areas: body.areas || {}, types: body.types || [], country: body.country || '',
       target: body.target && typeof body.target.name === 'string' ? { name: body.target.name.slice(0, 80), hint: String(body.target.hint || '').slice(0, 120) } : null,
-    });
+    }, saved.length ? saved : (String(post.desc || '').length < 200 ? images : []));
   } catch (e: any) {
     await refund('ai', LIMIT_AI);
     return NextResponse.json({ cover, caption: post.desc, error: 'AI 整理失敗：' + (e?.message || e) }, { status: 502 });
