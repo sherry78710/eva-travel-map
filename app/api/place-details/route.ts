@@ -59,11 +59,14 @@ async function summarize(name: string, reviews: any[], hints: HL | null): Promis
 - good 3 到 5 條、caution 0 到 3 條，只寫多個人都提到的共通點；只有一個人講的不要寫。
 - 意思相同的合併成一條，src 列出所有提到的來源（只能用 Google、網路、貼文）。
 - caution 只寫營業時間看不出來的事（排隊、只收現金、要預約、限時用餐、座位少、價位偏高、服務等）。不要寫營業時間、公休日、地址。
-- 用繁體中文，不要編造。`;
+- text 一律用繁體中文（台灣用語）。評論或先前整理的重點是日文、韓文、英文時，要翻譯成繁體中文，不可以保留原文句子。
+- 不要編造。`;
   const user = `店名：${name}
 先前整理的重點：${JSON.stringify(hints || { good: [], caution: [] })}
 Google 評論：
-${revText || '（沒有）'}`;
+${revText || '（沒有）'}
+
+（提醒：輸出的 text 全部翻成繁體中文）`;
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

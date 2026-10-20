@@ -335,7 +335,8 @@ async function askClaude(post: { title: string; desc: string }, ctx: any, photos
 ${typeRules || '（無）'}
 - highlights.good 3 到 5 條、caution 0 到 3 條。只寫多個來源重複提到的共通點，不要編造。
 - caution 只寫營業時間看不出來的事，例如：排隊很久、只收現金、要預約、限時用餐、座位少、價位偏高。不要寫營業時間、公休日、地址。
-- 所有說明文字用繁體中文。查不到就照貼文內容填，不要編造。
+- 語言：除了 recommendations 的 name 和 map_query、search_query 用原文以外，其他所有文字（note、recommendations 的 desc、highlights 的 text）一律用繁體中文（台灣用語）。網路資料是日文、韓文、英文時要翻譯成繁體中文，不可以直接貼原文句子。
+- 查不到就照貼文內容填，不要編造。
 - is_place 只有在貼文明顯不是介紹店家或景點（例如心情、新聞、問問題）時才填 false。貼文很短時（例如「第一餐直奔桐麵 爽哭」），裡面的專有名詞多半就是店名，一定要上網搜尋確認，不可以因為資訊少就填 false 或把 name 留空。
 - 有附貼文照片時一起看：碗、招牌、菜單、包裝、地圖卡片上常印有店名，可以當作找店的線索。`;
   const target = ctx.target && ctx.target.name ? ctx.target : null;
@@ -351,7 +352,9 @@ types: ${JSON.stringify(ctx.types)}
 使用者已選的國家: ${ctx.country || '（未選）'}
 
 貼文標題: ${post.title}
-貼文內容: ${post.desc}${targetNote}`;
+貼文內容: ${post.desc}${targetNote}
+
+（提醒：note、desc、highlights 一律用繁體中文寫）`;
   // 店名已確定（照片讀到、使用者指定、多間店模式）→ 不用再搜「是哪間店」，上限 2 次；要用猜的 → 上限 4 次
   const tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: target ? 2 : 4 }];
   const call = async (messages: any[], withTools: boolean, timeoutMs: number) => {
